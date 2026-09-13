@@ -716,6 +716,10 @@ function pickBody() {
     '换池＝<b>整批</b>换 10 条；卡上不标档位，须自行判断。</div>';
 }
 
+/* 待还原的滚动位置：renderPick() 只**记**不写，真正写回由 render() 末尾的 restorePickScroll()
+   在 syncCandHeights() 之后执行（原因见该函数注释）。 */
+let pickScrollKeep = null;
+
 /* 弹窗重绘：主体整块换掉（顺带保留滚动位置），吸底动作条只改文案与可用性。
    滚动位置必须手工还原 —— 选卡会触发一次整屏 render，innerHTML 一换滚动就回顶，
    玩家点了靠下那张卡却被迫重新找位置。滚动容器是 .sheet（它有 max-height + overflow）。
@@ -730,9 +734,8 @@ function renderPick() {
   }
   $('pkTitle').textContent = '第 ' + (state.roster.length + 1) + ' 轮 · 抽取候选';
   const sheet = pm.querySelector('.sheet');
-  const keep = sheet ? sheet.scrollTop : 0;
+  pickScrollKeep = sheet ? sheet.scrollTop : null;
   body.innerHTML = pickBody();
-  if (sheet) sheet.scrollTop = keep;
 
   const c = state.pick ? byKet(state.pick) : null;
   /* 动作条只有「确认」一个键（2026-09-13 用户口径：取消键多余，与原型一致）。
@@ -842,7 +845,7 @@ function flowRow(ket, colspan) {
   }).join('');
 
   const note = isIf
-    ? '<div class="racemore">✦ 本行含 IF 改写后的赛果（改写使赏金 ' + (delta >= 0 ? '＋' : '−') + fmt(Math.abs(delta)) + ' 万）</div>'
+    ? '<div class="racemore">✦ 本行含<b>世界线变动</b>后的赛果（赏金 ' + (delta >= 0 ? '＋' : '−') + fmt(Math.abs(delta)) + ' 万）</div>'
     : '';
   return '<tr class="frow' + (state.flows[ket] ? ' open' : '') + (lastFx.flow === ket ? ' into' : '') + '"><td colspan="' + colspan + '">' + html + note + '</td></tr>';
 }
@@ -861,7 +864,7 @@ function simTable() {
   const head = '<tr><th class="c-no" title="纯行号（1–10），非血统番号">No</th>' +
     '<th>马名</th><th>性齢</th><th title="1着-2着-3着-着外；0 场显示 —">成績</th>' +
     '<th>血統</th>' +
-    (showStab ? '<th class="c-stab" title="初厩（入厩时的厩舎，不随后续転厩改写）">厩舎</th>' : '') +
+    (showStab ? '<th class="c-stab" title="初厩（入厩当时的厩舎，不随后续転厩变化）">厩舎</th>' : '') +
     (showOwn ? '<th class="c-own">馬主</th>' : '') +
     '<th class="c-score" title="' + esc(SCORE_TIP) + '" style="text-align:right">' + SCORE_HEAD() + '</th></tr>';
 
@@ -871,15 +874,17 @@ function simTable() {
     const name = revealed
       ? esc(c.name) + (gone ? '<span class="voidnote">不计分 · 被规则移除</span>' : '')
       : designation() + (gone ? '<span class="voidnote">已被移除 · 身份不揭晓</span>' : '');
-    const age = (k > trapNode() ? 3 : 2) + ' 歳';
+    /* 【2026-09-13】明细表的性齢列不再带「歳」：表头已写「性齢」，单元格里「牡 3」即够。
+       候选卡与名单行（"牡 2 歳 · 鹿毛"）不在此列 —— 那里没有表头，单位留着才读得懂。 */
+    const age = String(k > trapNode() ? 3 : 2);
     const sc = gone ? '—' : scoreAt(r.ket, cut);
     const rec = gone ? '—' : recAt(r.ket, cut);
     const open = !!state.flows[r.ket];
     return '<tr class="mrow' + (open ? ' open' : '') + (gone ? ' void' : '') + ' drop' + (lastFx.table ? ' into' : '') +
       '" data-rows="' + (canFlow && !gone ? esc(r.ket) : '') + '">' +
       '<td class="c-no">' + (canFlow && !gone ? '<span class="caret">▶</span>' : '') + (i + 1) + '</td>' +
-      '<td>' + name + '</td>' +
-      '<td>' + (c.sex === 'M' ? '牡' : '牝') + ' ' + age + '</td>' +
+      '<td class="c-name">' + name + '</td>' +
+      '<td class="c-age">' + (c.sex === 'M' ? '牡' : '牝') + ' ' + age + '</td>' +
       '<td class="rec">' + rec + '</td>' +
       '<td class="c-ped">' + pedCell(c, k) + '</td>' +
       (showStab ? '<td class="c-stab">' + stabCell(c, k) + '</td>' : '') +
@@ -893,7 +898,7 @@ function simTable() {
   const sum = k === 0 ? null : live.reduce((a, r) => a + scoreAt(r.ket, cut), 0);
   const frozen = k >= paceLen() && state.seenIf;
   const foot = '<tr><td colspan="' + (cols - 1) + '" style="text-align:right">' +
-    (k === 0 ? '未结算' : (frozen ? '玩家总分（含 IF 改写）' : (k >= paceLen() ? '玩家总分（待 IF 事件卡关闭后定格）' : '玩家总分'))) +
+    (k === 0 ? '未结算' : (frozen ? '玩家总分（含 IF 变动）' : (k >= paceLen() ? '玩家总分（待 IF 事件卡关闭后定格）' : '玩家总分'))) +
     '</td><td class="c-sum' + (k === 0 ? ' pend' : '') + '">' + (sum === null ? '—' : fmt(sum)) + '</td></tr>';
 
   return '<div class="tw"><table class="rows"><thead>' + head + '</thead><tbody>' + body + '</tbody><tfoot>' + foot + '</tfoot></table>' +
@@ -927,7 +932,7 @@ function simChips() {
   }
   if (state.progress >= paceLen()) {
     const n = state.ifHits.length;
-    out.push('<button class="evchip' + (n ? ' gold' : '') + '" data-evif="1">✦ IF 世界线 · ' + n + ' 条改写</button>');
+    out.push('<button class="evchip' + (n ? ' gold' : '') + '" data-evif="1">✦ IF 世界线 · ' + n + ' 处变动</button>');
   }
   return out.join('');
 }
@@ -995,33 +1000,46 @@ function trapBody() {
 
 function ifBody() {
   const evs = state.ifHits;
-  if (!evs.length) return '<p>本局<b>没有触发任何 IF 事件</b> —— 名单里的马都安分地活在原赛果里。</p>';
+  if (!evs.length) return '<p><b>这一届风平浪静</b> —— 名单里的马都按原本的路走了下去。</p>';
   const cards = evs.map(ev => {
     const ops = ev.rewrite.map(op => {
       const nm = op.race[1], d = op.race[0].replace(/-/g, '.');
-      const verb = { drop: '撤出', add: '追加', set: '改写着顺', prize: '改写赏金', nf: '改为非完走' }[op.op];
+      /* 【2026-09-13】明细行不再带动作词（原先有「撤出 / 多跑一场 / 着顺变了 / 赏金变了 / 非完走」）。
+         这些词和「改写」「变动」是同一类东西 —— 都在替玩家总结"这一行是在干什么"，
+         而赛名、着顺、赏金、以及「不再计入」这几个字已经把事实说完了（用户裁定）。
+         「その影響」标头本身就是这整块的总起，底下的行只需要陈述。 */
       let shot = '';
       if (op.op === 'set') shot = '第 ' + op.wasFinish + ' 着 → 第 ' + op.finish + ' 着（赏金 ' + fmt(op.wasPrize) + ' → ' + fmt(op.prize) + ' 万）';
       else if (op.op === 'prize') shot = '赏金 ' + fmt(op.wasPrize) + ' → ' + fmt(op.prize) + ' 万（着顺不变）';
       else if (op.op === 'add') shot = '第 ' + op.finish + ' 着（赏金 ' + fmt(op.prize) + ' 万）';
       else if (op.op === 'drop') shot = '原第 ' + op.wasFinish + ' 着（赏金 ' + fmt(op.wasPrize) + ' 万）不再计入';
       else if (op.op === 'nf') shot = '原第 ' + op.wasFinish + ' 着 → ' + NF[op.nf];
-      return '<div class="opline">' + verb + '　<b>' + d + ' ' + esc(nm) + '</b>　' + shot + '</div>';
+      return '<div class="opline"><b>' + d + ' ' + esc(nm) + '</b>　' + shot + '</div>';
     }).join('');
-    const affect = ev.scoreImpact
-      ? '<div class="racemore" style="color:var(--gold);font-weight:700">✦ 影响分数：有 —— 该改写使赏金 ' +
-        (ev.delta >= 0 ? '＋' : '−') + fmt(Math.abs(ev.delta)) + ' 万（＝ ZOG ' + (ev.delta >= 0 ? '＋' : '−') + fmt(Math.abs(ev.delta)) + ' 分）</div>'
-      : '<div class="racemore">影响分数：无 —— 改写落点在赏金区外，ZOG 分不变（成绩串会变）</div>';
-    /* 只渲染玩家该看的：马名 ＋ 正文 ＋ 改写明细 ＋ 影响分数。
+    /* 【2026-09-13】明细与分数收在「その影響」标头下（原先明细归明细、末尾另挂一行「影响分数：有／无」）。
+       没有分数时**不写任何东西**：原来的「ZOG 分不变 —— 落在赏金区外，成绩串会变」
+       是在向玩家解释"这里为什么没有分数"，而"没有分数"本身不需要解释（用户裁定）。
+       有分数时才出现一行 —— 那是玩家真正要拿走的数字。 */
+    const score = ev.scoreImpact
+      ? '<div class="ifscore hot">✦ 赏金 ' + (ev.delta >= 0 ? '＋' : '−') + fmt(Math.abs(ev.delta)) +
+        ' 万（ZOG ' + (ev.delta >= 0 ? '＋' : '−') + fmt(Math.abs(ev.delta)) + ' 分）</div>'
+      : '';
+    /* 只渲染玩家该看的：马名 ＋ 正文 ＋ 「その影響」块。
        刻意不渲染 trigger.desc（幕后触发设定）与 spill（对其他马的核算记录）——
        两者都是构建期的设计备注，带「（非本届，忽略）」这类内部括注，摊到玩家面前直接出戏（2026-09-13 用户报）。 */
     return '<div class="ifcard"><span class="iftag">IF</span>' +
       '<h4>' + esc(ev.name) + '</h4>' +
-      '<p class="hi">' + esc(ev.text) + '</p>' + ops + affect +
+      '<p class="hi">' + esc(ev.text) + '</p>' +
+      '<div class="ifimpact"><span class="ifimplabel">その影響</span>' + ops + score + '</div>' +
       '</div>';
   }).join('');
-  return '<p>被点名的名马撬动了历史 —— <b>改写写进赛果，计分读取的就是改写后的新赛果</b>。' +
-    '先看历史被改，再看含改写的分数。</p><div class="ifstack">' + cards + '</div>';
+  /* 【2026-09-13】原先这里有一段总起：「被点名的名马撬动了历史 —— 改写写进赛果，
+     计分读取的就是改写后的新赛果。先看历史被改，再看含改写的分数。」
+     它是在替玩家**解说卡片的结构与读法**（先说哪半张、后说哪半张），而不是给出内容本身 ——
+     卡片自己已经有 IF 标签、马名、正文与「その影響」块，再讲一遍就成了看说明书（用户报：太出戏）。
+     删掉后弹窗一开即见卡片；「改写进赛果、分数读的是新赛果」这个口径移入 rulesHtml 的「IF 世界线」一节。
+     注意 ifBody() 同时被结算页内嵌（见 viewResult 的 ifRec），两处的效果一并变干净。 */
+  return '<div class="ifstack">' + cards + '</div>';
 }
 
 /* 「错过的名马」：本局**见过但没选走**的名马（推演页 / 结算页共用）。
@@ -1047,7 +1065,7 @@ function missBody() {
     return '<tr>' +
       '<td class="c-no">' + (i2 + 1) + '</td>' +
       '<td class="c-name">' + (revealed ? esc(c.name) : designation()) + '</td>' +
-      '<td class="c-age">' + (c.sex === 'M' ? '牡' : '牝') + ' ' + (k > trapNode() ? 3 : 2) + ' 歳</td>' +
+      '<td class="c-age">' + (c.sex === 'M' ? '牡' : '牝') + ' ' + (k > trapNode() ? 3 : 2) + '</td>' +
       '<td class="c-ped">' + esc(sireOf(c)) + '</td>' +
       '<td class="c-ped">' + esc(breederOf(c)) + '</td>' +
       '<td class="rec">' + recAt(r.x, cut) + '</td>' +
@@ -1110,8 +1128,8 @@ function viewResult() {
     const open = !!state.flows[r.ket];
     return '<tr class="mrow' + (open ? ' open' : '') + '" data-rows="' + esc(r.ket) + '">' +
       '<td class="c-no">' + (i + 1) + '<span class="caret">▶</span></td>' +
-      '<td>' + esc(r.c.name) + '</td>' +
-      '<td>' + (r.c.sex === 'M' ? '牡' : '牝') + ' 3 歳</td>' +
+      '<td class="c-name">' + esc(r.c.name) + '</td>' +
+      '<td class="c-age">' + (r.c.sex === 'M' ? '牡' : '牝') + ' 3</td>' +
       '<td class="rec">' + recAt(r.ket, cut) + '</td>' +
       '<td class="c-ped">' + pedCell(r.c, k) + '</td>' +
       (showStab ? '<td class="c-stab">' + stabCell(r.c, k) + '</td>' : '') +
@@ -1132,8 +1150,8 @@ function viewResult() {
   }).join('');
 
   const ifRec = state.ifHits.length
-    ? '<div class="panel" style="margin-top:16px"><div class="hd"><b>本局 IF 改写记录</b>' +
-      '<span>' + state.ifHits.length + ' 条 · 已计入总分</span></div>' +
+    ? '<div class="panel" style="margin-top:16px"><div class="hd"><b>本局 IF 世界线变动</b>' +
+      '<span>' + state.ifHits.length + ' 处 · 已计入总分</span></div>' +
       '<div style="padding:12px">' + ifBody() + '</div></div>'
     : '';
 
@@ -1148,7 +1166,7 @@ function viewResult() {
     '<div class="scorewrap"><div class="scorebig">' + fmt(total) + '</div>' +
     '<div class="scoremeta">玩家总分 · ZOG（1 万円 ＝ 1 分）<br>' +
     '计分马 <b>' + arr.length + '</b> 匹　·　被移除 <b>' + (state.trapRemoved || []).length + '</b> 匹<br>' +
-    'IF 改写净增 <b>' + (sum >= 0 ? '＋' : '−') + fmt(Math.abs(sum)) + '</b> 分（' + state.ifHits.length + ' 条）</div></div>' +
+    'IF 变动净增 <b>' + (sum >= 0 ? '＋' : '−') + fmt(Math.abs(sum)) + '</b> 分（' + state.ifHits.length + ' 处）</div></div>' +
 
     '<div class="rgrid"><div class="panel"><div class="hd"><b>最终明细</b>' +
     '<span>按累计分降序 · 点行展开逐场</span></div>' +
@@ -1175,6 +1193,7 @@ function render(fx) {
   $('app').innerHTML = VIEWS[state.screen]();
   renderPick();                     /* 抽取弹窗在 #app 之外：整树重绘冲不掉它，改由这里同步 */
   if (state.screen === 'draft') syncCandHeights();   /* 必须排在 renderPick 之后：量的是弹窗里的新卡 */
+  restorePickScroll();              /* 再排在 syncCandHeights 之后：见函数注释 */
   save();
 }
 
@@ -1185,6 +1204,30 @@ function syncCandHeights() {
   let h = 0;
   grid.querySelectorAll('.cand').forEach(el => { h = Math.max(h, el.offsetHeight); });
   if (h) grid.style.setProperty('--cand-min-h', h + 'px');
+}
+
+/* 【2026-09-13 修「手机上点最下面那张卡，弹窗自己往上跳一格」】
+   还原时机必须排在 syncCandHeights() **之后**，不能像原先那样在 renderPick() 里就地写。
+   原因：卡片统一高度是「先量后写」的（min-height 由 --cand-min-h 提供，取值见上）——
+   重绘出来的新 grid 还没有这个内联值，10 张卡先按各自自然高度排（比统一高度矮一截），
+   .sheet 的 scrollHeight 随之缩水；此刻写 scrollTop，值会被这个偏矮的中间态夹到新的、
+   更小的上限，等高度随后写回也无法自愈 —— 玩家看到的正是「停在倒数第二张卡，
+   还得往下滑一点才找到自己刚点的那张」，伴随一次内容高度回弹的抖动。
+   三步（重绘 → 量高 → 还原位置）都在同一个同步任务里，浏览器只在末尾绘制一次，
+   所以修正后过程中不会有可见跳动。
+   下面 rAF 那次补写是给 iOS 的保险：字体与换行偶尔要到下一帧才定稿，高度一变
+   scrollTop 会被再夹一次；第二帧发现值不对就补一次（玩家真滚了则不打扰——同一帧内滚不动）。 */
+function restorePickScroll() {
+  if (pickScrollKeep === null) return;
+  const keep = pickScrollKeep;
+  pickScrollKeep = null;
+  const sheet = document.querySelector('#pickModal .sheet');
+  if (!sheet || !state.pickOpen || state.screen !== 'draft') return;
+  sheet.scrollTop = keep;
+  requestAnimationFrame(() => {
+    if (!state.pickOpen || !sheet.isConnected) return;
+    if (Math.abs(sheet.scrollTop - keep) > 1) sheet.scrollTop = keep;
+  });
 }
 
 /* ---------------------------------------------------------------- 事件 */
@@ -1234,7 +1277,7 @@ $('app').addEventListener('click', async e => {
   if (t.closest('[data-restart]')) return restart();
 
   if (t.closest('[data-evtrap]')) return openModal('规则陷阱 · 那一刀', trapBody());
-  if (t.closest('[data-evif]')) return openModal('IF 世界线 · 本局改写', ifBody());
+  if (t.closest('[data-evif]')) return openModal('IF 世界线 · 本局变动', ifBody());
   if (t.closest('[data-evmiss]')) return openModal('错过的名马', missBody());
 });
 
@@ -1347,7 +1390,7 @@ async function advance() {
   render({ page: true, table: true });
 
   if (k === trapNode()) openModal('规则陷阱 · 那一刀', trapBody());
-  else if (ifFired) openModal('IF 世界线 · 本局改写', ifBody());
+  else if (ifFired) openModal('IF 世界线 · 本局变动', ifBody());
 }
 
 function restart() {
@@ -1377,6 +1420,15 @@ function rulesHtml() {
     '<b>不消耗换池次数</b>。</li>' +
     '<li>换池是<b>整批</b>换掉 10 条，每轮 <b>' + REFRESH_PER_ROUND + ' 次</b>（换轮重置）、不消耗轮次。</li>' +
     '<li>已入名单的马不再出现在后续候选里；关窗＝放弃本次未确认的选中（换池次数不返还）。</li>' +
+    '</ul>' +
+    /* 【2026-09-13】IF 的口径从 IF 卡片顶部搬到这里（那张卡片开头原本有一段总起，
+       在向玩家解说读法，出戏；见 ifBody）。这里只讲「IF 是什么、怎么算」，不复述卡面结构。 */
+    '<h4>IF 世界线</h4><ul>' +
+    '<li>名单里的名马<b>世界线可能变动</b>：换一场出走、挪一个着顺、换一次赏金，甚至整场撤出。</li>' +
+    '<li>变动<b>落在赛果本身</b> —— 该马此后按新的世界线计分，读到的就是变动后的分数，' +
+    '而不是在原分数上另行加减。</li>' +
+    '<li>多数变动落在赏金区外：<b>成绩串会变，总分未必变</b>。变动在终局结算时发生，' +
+    '总分须待事件卡关闭后才定格。</li>' +
     '</ul>';
 }
 

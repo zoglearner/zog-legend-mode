@@ -73,8 +73,18 @@
   table.rows .c-stab{white-space:nowrap}
   table.rows .c-own{white-space:normal;line-height:1.35}
   /* 结算页姓名类列 nowrap 兜底：单列时表格宽 1240px 足够横排；
-     即便退到更窄屏、走 .tw 横向滚动，也不让日文长名一字一行竖排 */
-  table.rows .c-name{white-space:nowrap}
+     即便退到更窄屏、走 .tw 横向滚动，也不让日文长名一字一行竖排。
+     【2026-09-13 修「明细表马名折成很多行」】这两条规则**一直只命中了表头** ——
+     表头写的是 <th class="c-name">，数据行却是裸 <td>，于是 nowrap 从未生效：
+     手机上表格下限 650px 被 9 列一分，马名列只剩一两个字的宽度，
+     日文（可任意字符处断行）就一字一行竖排起来。
+     推演页 rowsForSeason() 与结算页 viewResult() 两处 td 均已补上同名 class。
+     ⚠️ 维护判据：姓名类列的 class 必须在 th 与 td 上**成对**出现，只写表头 ＝ 只有表头生效。
+     【同日二次定稿 · 折中】补上 nowrap 后竖排没了，但列宽被钉死在最长名的自然宽度上，
+     窄屏要横滑得更远。现改为「给一个下限、允许折两行」：7em ≈ 7 个全角字，
+     常见马名（5~8 字）正好一行，最长的 11 字（ブリックスアンドモルタル）折两行；
+     因为列宽恒 ≥ 7 字，也就永远不会退化成「一字一行」的竖排（那需要列宽 ≈ 1 字）。 */
+  table.rows .c-name{white-space:normal;min-width:7em;line-height:1.4}
   table.rows .c-age{white-space:nowrap}
   table.rows tr.void td{opacity:.4;text-decoration:line-through;text-decoration-color:var(--danger)}
   table.rows tfoot td{background:var(--surface-2);border-top:1px solid var(--line);font-weight:700}
@@ -582,6 +592,13 @@
     background:var(--surface-2);border-radius:var(--radius);padding:6px 8px;margin:7px 0 0;line-height:1.7;
   }
   .ifcard .opline i{font-style:normal;color:var(--gold);font-weight:700}
+  /* 【2026-09-13】卡片下半块收进「その影響」标头：明细与分数是同一条因果，
+     原先拆成两块 —— 明细各自带动词、末尾另挂「影响分数：有／无」，读起来像在报账（用户意见）。
+     明细行只陈述事实（不带动作词），标头用日文，与马名 / 赛事名同一质感。 */
+  .ifcard .ifimpact{margin-top:11px;border-top:1px dashed var(--line);padding-top:9px}
+  .ifcard .ifimplabel{display:block;font-size:10.5px;font-weight:800;letter-spacing:.18em;color:var(--gold)}
+  .ifcard .ifscore{font-size:12px;color:var(--muted);padding-top:7px;line-height:1.7}
+  .ifcard .ifscore.hot{color:var(--gold);font-weight:700}
 
   /* 候选卡里「不可见」的字段（马主 / 厩舎未披露） */
   .kv .v.gone{color:var(--muted);letter-spacing:.12em}
