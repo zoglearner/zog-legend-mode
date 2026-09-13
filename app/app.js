@@ -1369,28 +1369,48 @@ async function enterDraft(restore) {
   render({ page: true, pool: true });
 }
 
+/* 逐场明细按段懒加载（races/s1…s6，单段 100~760 KB）：节点 2 起要现场拉，
+   手机上一等就是几秒 —— 期间必须把「继续模拟」置灰（2026-09-13 用户报「第二个节点加载慢」）。
+   三处细节，缺一个都白按：
+   ① 置灰要写在 await **之前**。先改 DOM 再等网络，主线程让出去，浏览器才有机会把这一帧画出来。
+   ② 进度在数据落地之后才自增（原先 progress++ 在最前面）。否则等待期间再点一下，
+      isDone() 仍是 false ⇒ 再 +1、再等一次 ⇒ **连点连跳节点**。顺带：拉失败时进度不动，
+      按钮还回去，玩家再点一次就是重试。
+   ③ advancing 锁住重入 —— 按钮置灰只挡得住"点按钮"，挡不住键盘/辅助设备的二次触发。 */
+let advancing = false;
+
 async function advance() {
-  if (isDone()) return;
-  state.progress++;
-  const k = state.progress;
+  if (advancing || isDone()) return;
+  const k = state.progress + 1;
+  const needSeg = k >= nameNode() && segIndexOfCut(cutOf(k)) >= S().segLoaded;
+  const btn = document.querySelector('[data-advance]');
 
-  /* 逐场明细按段懒加载：节点 2 起才需要 */
-  if (k >= nameNode()) await ensureSegments(segIndexOfCut(cutOf(k)));
+  advancing = true;
+  if (needSeg && btn) { btn.disabled = true; btn.textContent = '正在载入逐场…'; }
+  try {
+    if (k >= nameNode()) await ensureSegments(segIndexOfCut(cutOf(k)));
+    state.progress = k;
 
-  if (k === trapNode()) {
-    state.trapRemoved = settleTrap();
-    state.seenTrap = false;
+    if (k === trapNode()) {
+      state.trapRemoved = settleTrap();
+      state.seenTrap = false;
+    }
+    let ifFired = false;
+    if (k >= paceLen()) {
+      if (state.ifHits.length && !state.seenIf) { ifFired = true; state.pendingIf = true; }
+      else state.seenIf = true;
+    }
+
+    render({ page: true, table: true });   /* 整屏重绘，置灰的那个按钮随之被换掉 */
+
+    if (k === trapNode()) openModal('规则陷阱 · 那一刀', trapBody());
+    else if (ifFired) openModal('IF 世界线 · 本局变动', ifBody());
+  } finally {
+    advancing = false;
+    /* 只收拾"失败路径"：render 没跑到，旧按钮还在页面上（isConnected），得手动还回去。
+       成功时它已被重绘替换，isConnected 为 false，这里不动 —— 免得改到新按钮的文案。 */
+    if (btn && btn.isConnected) { btn.disabled = false; btn.textContent = '继续模拟（到 ' + cutOf(k) + '）'; }
   }
-  let ifFired = false;
-  if (k >= paceLen()) {
-    if (state.ifHits.length && !state.seenIf) { ifFired = true; state.pendingIf = true; }
-    else state.seenIf = true;
-  }
-
-  render({ page: true, table: true });
-
-  if (k === trapNode()) openModal('规则陷阱 · 那一刀', trapBody());
-  else if (ifFired) openModal('IF 世界线 · 本局变动', ifBody());
 }
 
 function restart() {
