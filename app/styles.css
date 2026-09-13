@@ -1,0 +1,560 @@
+  :root{
+    --font-sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;
+    --font-serif:"Songti SC","SimSun",Georgia,"Times New Roman",serif;
+    --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+
+    /* 方案 C · 赛马会雅致风（§6.2 定稿） */
+    --bg:#f6f4ef; --surface:#ffffff; --surface-2:#f0eee6;
+    --text:#1e2a24; --muted:#7d8781; --line:#e3ded2;
+    --accent:#0f4c3a; --accent-ink:#fff;
+    --gold:#b08d4f; --danger:#8c3a2e;
+    --radius:4px;
+    --head-font:var(--font-serif); --num-font:var(--font-mono);
+    --shadow:0 1px 2px rgba(30,42,36,.05), 0 8px 24px rgba(30,42,36,.06);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:var(--font-sans); background:var(--bg); color:var(--text);
+    -webkit-font-smoothing:antialiased; font-size:15.5px; line-height:1.6;
+    /* 默认 56px 供首帧兜底，脚本量到真实底栏高度后覆盖（固定底栏必须让出等高的滚动空间） */
+    padding-bottom:var(--devbar-h, 56px);
+  }
+  h1,h2,h3,h4{margin:0;font-weight:700}
+
+  /* ============ 通用构件 ============ */
+  .lbl{font-size:11px;letter-spacing:.14em;color:var(--muted);font-weight:700;text-transform:uppercase}
+  .num{font-family:var(--num-font);font-variant-numeric:tabular-nums}
+  .muted{color:var(--muted)}
+  .badge{
+    display:inline-block;font-size:11.5px;padding:2px 7px;border-radius:99px;
+    border:1px solid var(--line);color:var(--muted);background:var(--surface-2);white-space:nowrap;
+  }
+  .badge.hot{border-color:var(--accent);color:var(--accent);font-weight:700}
+  .badge.gold{border-color:var(--gold);color:var(--gold);font-weight:700}
+  .badge.bad{border-color:var(--danger);color:var(--danger);font-weight:700}
+  .btn{
+    font-family:inherit;font-size:14px;padding:9px 18px;border-radius:var(--radius);
+    border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);
+    font-weight:700;cursor:pointer;transition:transform .12s ease,opacity .12s ease;
+  }
+  .btn:hover:not(:disabled){transform:translateY(-1px)}
+  .btn:active:not(:disabled){transform:translateY(0)}
+  .btn.ghost{background:transparent;color:var(--accent)}
+  .btn:disabled,.btn.off{
+    background:var(--surface-2);border-color:var(--line);color:var(--muted);
+    cursor:not-allowed;font-weight:600;transform:none;
+  }
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  .panel .hd{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:9px 12px;border-bottom:1px solid var(--line);background:var(--surface-2);
+  }
+  .panel .hd b{font-family:var(--head-font);font-size:14px;letter-spacing:.02em}
+  .panel .hd span{font-size:12px;color:var(--muted)}
+  .bar{display:block;height:5px;border-radius:99px;background:var(--surface-2);overflow:hidden;margin-top:4px}
+  .bar i{display:block;height:100%;background:var(--accent)}
+  .bar.g i{background:var(--gold)}
+
+  /* 表格 */
+  table.rows{width:100%;border-collapse:collapse}
+  table.rows th{
+    font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--muted);
+    text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap;
+  }
+  table.rows td{font-size:13px;padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
+  table.rows tr:last-child td{border-bottom:none}
+  table.rows tr:nth-child(even) td{background:var(--surface-2)}
+  table.rows .c-no{font-family:var(--num-font);font-weight:700;width:34px}
+  table.rows .c-score{font-family:var(--num-font);font-weight:700;text-align:right;white-space:nowrap}
+  table.rows .rec{font-family:var(--num-font);letter-spacing:.04em;white-space:nowrap}
+  /* 厩舎・馬主（2026-09-11 追加两列）：厩舎（片假名/汉字调教师名）不折行，未披露的「？？」用灰字；
+     馬主名可能很长（如 ノルマンディーサラブレッドレーシング），允许折行，免得把整表撑宽 */
+  table.rows .c-stab{white-space:nowrap}
+  table.rows .c-own{white-space:normal;line-height:1.35}
+  /* 结算页姓名类列 nowrap 兜底：单列时表格宽 1240px 足够横排；
+     即便退到更窄屏、走 .tw 横向滚动，也不让日文长名一字一行竖排 */
+  table.rows .c-name{white-space:nowrap}
+  table.rows .c-age{white-space:nowrap}
+  table.rows tr.void td{opacity:.4;text-decoration:line-through;text-decoration-color:var(--danger)}
+  table.rows tfoot td{background:var(--surface-2);border-top:1px solid var(--line);font-weight:700}
+  table.rows tr.void td.c-score{color:var(--danger)}
+  .voidnote{display:block;font-size:11.5px;color:var(--danger);text-decoration:none;margin-top:2px}
+  /* 逐场轨迹 = **明细行的行内展开**（2026-09-11 用户要求）：
+     点某匹马那一行 → 该行下方就地展开它的逐场（日期 / 赛事名 / 着顺 / 本賞金），不再单开一块。 */
+  table.rows tbody tr.mrow{cursor:pointer}
+  table.rows tbody tr.mrow:hover td{background:#f2f7f4}
+  table.rows .caret{display:inline-block;width:9px;margin-right:3px;color:var(--muted);
+    font-size:10px;transition:transform .18s;transform-origin:50% 50%}
+  table.rows tbody tr.mrow.open .caret{transform:rotate(90deg);color:var(--accent)}
+  table.rows tbody tr.mrow.open td{background:#f2f7f4}
+  table.rows tr.frow{display:none}
+  table.rows tr.frow.open{display:table-row}
+  /* 只有「刚被点开」的那一行播展开动画；已展开的行在后续重绘里保持静态 */
+  table.rows tr.frow.open.into{animation:drop .28s cubic-bezier(.2,.7,.3,1) both}
+  table.rows tr.frow>td{background:#f2f7f4!important;padding:8px 12px 10px}
+  table.rows tr.frow .race:first-child{border-top:none;margin-top:0;padding-top:0}
+
+  /* ============ 顶栏 ============ */
+  .topbar{
+    position:sticky;top:0;z-index:40;background:rgba(246,244,239,.94);
+    backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  }
+  .topbar .inner{
+    max-width:1280px;margin:0 auto;padding:12px 20px;
+    display:flex;align-items:center;justify-content:space-between;gap:14px;
+  }
+  .topbar .l{display:flex;align-items:center;gap:10px;min-width:0}
+  .brand{font-family:var(--head-font);font-size:16.5px;font-weight:700;letter-spacing:.06em;color:var(--accent)}
+  .topbar .meta{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .topbar .meta b{color:var(--text)}
+  .topbar .r{display:flex;align-items:center;gap:8px}
+  .steps{display:flex;gap:4px}
+  .steps i{width:16px;height:3px;border-radius:99px;background:var(--line);display:block}
+  .steps i.on{background:var(--accent)}
+  .mini{
+    font-family:inherit;font-size:12.5px;padding:5px 10px;border-radius:var(--radius);
+    border:1px solid var(--line);background:var(--surface);color:var(--muted);cursor:pointer;
+  }
+  .mini:hover{color:var(--accent);border-color:var(--accent)}
+
+  /* ============ 场景容器 ============ */
+  main{max-width:1280px;margin:0 auto;padding:22px 20px 40px}
+  .screen{display:none}
+  /* 入场动画一律挂在 .into 上（由 render() 按「这一帧真的变了的部件」补标，见脚本 fx）。
+     若挂在基础样式上，render() 每次整棵重建子树都会连带重播 —— 表现就是
+     「点一条马，页面其他元素也跟着跳一下」（2026-09-11 朋友实测反馈）。
+     【2026-09-13 二次修正 · 同一条反馈又回来了】查下来是上面这条规则漏了 section 这一层：
+     四个视图的根标签曾把 into 写死成 '<section class="screen on into">'，而 render() 每次都是
+     $('app').innerHTML 整树重建 ⇒ 新 section 又带 into ⇒ 页内任何点击（选卡 / 换池 / 确认入栏 /
+     展开逐场）都重播一次整页 rise（300ms、6px 上移 + 淡入），观感就是「整个页面元素都在动」。
+     2026-09-11 那轮只把动画从基础样式收进 .into，section 这层照旧写死，等于没修掉。
+     现在四个视图一律写 (lastFx.page ? ' into' : '') —— 只有真换屏（标题↔选马↔推演↔结算、
+     推进节点、开新局）才播整页动画。
+     ⚠️ 维护判据：**页内更新**的 render 调用一律不得带 page:true；否则整页又会重播。 */
+  .screen.on{display:block}
+  .screen.on.into{animation:rise .3s cubic-bezier(.2,.7,.3,1) both}
+  @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .shead{margin-bottom:18px}
+  .shead h2{font-family:var(--head-font);font-size:25px;letter-spacing:.03em}
+  .shead p{margin:6px 0 0;font-size:14px;color:var(--muted)}
+
+  /* ============ 1. 标题页 ============ */
+  .hero{text-align:center;padding:26px 0 30px}
+  .hero .kicker{font-size:12px;letter-spacing:.24em;color:var(--gold);font-weight:700}
+  .hero h1{font-family:var(--head-font);font-size:38px;letter-spacing:.06em;margin:10px 0 8px;color:var(--accent)}
+  .hero p{margin:0 auto;max-width:520px;font-size:14px;color:var(--muted);line-height:1.85}
+  /* 模式选择：一行两格；说明从简，「规则说明」入口在选马页 */
+  .modebar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:20px}
+  @media(max-width:560px){.modebar{grid-template-columns:1fr}}
+  .mcard{
+    display:flex;align-items:center;gap:9px;width:100%;text-align:left;font-family:inherit;cursor:pointer;
+    padding:10px 12px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+    transition:border-color .14s ease;
+  }
+  .mcard[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+  .mcard.off{opacity:.5;cursor:not-allowed;background:var(--surface-2)}
+  /* 推进节奏选择卡（2026-09-12）：未选＝虚线边（仍可点），已选＝走上面的 aria-pressed 高亮 */
+  .mcard:not(.off)[aria-pressed="false"]{border-style:dashed}
+  .mcard .mn{font-family:var(--head-font);font-size:15.5px}
+  .mcard .md{flex:1;min-width:0;font-size:12px;color:var(--muted)}
+
+  /* 届次选择：下拉 */
+  .selrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+  select.sel{
+    appearance:none;-webkit-appearance:none;cursor:pointer;
+    font-family:var(--head-font);font-size:15px;font-weight:700;color:var(--text);
+    padding:9px 36px 9px 12px;min-width:250px;
+    background-color:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+    background-image:url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5L6 8 9.5 4.5' fill='none' stroke='%237d8781' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 12px center;
+  }
+  select.sel:focus{outline:none;border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+  .selmeta{font-size:12.5px;color:var(--muted)}
+  .selmeta b{color:var(--text)}
+  .rules-link{
+    background:none;border:none;font-family:inherit;font-size:13px;color:var(--accent);
+    text-decoration:underline;cursor:pointer;padding:0;margin-top:2px;
+  }
+  .titleacts{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+
+  /* ============ 2. 选马页 ============ */
+  /* 2026-09-13 用户口径「名单主区 ＋ 候选弹窗 ＋ 空位入口」：单列，名单占满整幅。
+     旧版是「候选铺满主区 ＋ 名单缩在右侧 300px 侧栏十宫格」（.draft 两列栅格）——
+     可名单才是玩家要反复读的东西（5 牡 5 牝 / 生産牧場档 / 同父都靠读它来盯），候选却是
+     「一次看完就关」的，故两者换位：名单升主区，候选收进弹窗，#app 里不再有 .draft 包裹层。 */
+  /* 名单：10 行常驻铺开、空位也照铺（选到第几轮、还差几匹一眼可见，不用去数）。
+     抽取入口**长在下一个空位上**：要填的格子本身就是按钮。只有紧接着的那个空位可点 ——
+     其余空位仍写「待第 N 轮抽取」，于是点击位置与填入位置永远同一格，
+     不会出现「点了第 07 格却填进 04」。 */
+  /* ⚠️ 这一组必须带 .mylist 前缀（2026-09-13 修）：明细表的行也叫 tr.mrow（见「推演页」一节），
+     无前缀的 .mrow{display:flex} 会把 <tr> 变成 flex 容器 —— 整个明细表当场错位。
+     名单行与表格行同名是历史原因，靠前缀隔开。 */
+  .mylist{display:flex;flex-direction:column;gap:6px}
+  .mylist .mrow{
+    display:flex;align-items:center;gap:10px;min-height:52px;padding:9px 12px;min-width:0;
+    border:1px dashed var(--line);border-radius:var(--radius);background:var(--surface-2);
+    font-size:12.5px;color:var(--muted);
+  }
+  .mylist .mrow.filled{border-style:solid;background:var(--surface);color:var(--text)}
+  .mylist .mrow.pop{animation:pop .4s cubic-bezier(.2,.9,.3,1.2)}
+  .mylist .mrow .mno{flex:0 0 22px;font-family:var(--num-font);font-size:12px;color:var(--muted)}
+  .mylist .mrow .mnm{flex:0 0 auto;font-family:var(--head-font);font-weight:700;font-size:14px}
+  .mylist .mrow .msb{flex:0 0 auto;min-width:0;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* 父 ・ 生産：**不能用省略号截断** —— 生産牧場名是判断「牧场档」的唯一依据，截掉就等于藏线索。
+     故这一格允许折行（日文/中文无空格也自然折），窄屏时它整段落到第二行。 */
+  .mylist .mrow .mped{flex:1 1 260px;min-width:0;font-size:12px;color:var(--muted);line-height:1.45}
+  .mylist .mrow .mpr{flex:0 0 auto;margin-left:auto;font-family:var(--num-font);font-size:12px;color:var(--muted)}
+  /* 空位＝入口：常驻虚线 ＋ 圆圈「＋」—— 不靠 hover 才现身，触屏没有悬停，可点性必须写在脸上 */
+  .mylist .mrow.slotbtn{
+    border-color:var(--accent);background:var(--surface);color:var(--accent);
+    cursor:pointer;font-family:inherit;font-size:12.5px;text-align:left;width:100%;
+  }
+  .mylist .mrow.slotbtn .mno{color:var(--accent)}
+  .mylist .mrow.slotbtn .plus{
+    flex:0 0 18px;height:18px;border:1px solid var(--accent);border-radius:50%;
+    display:flex;align-items:center;justify-content:center;font-size:13px;line-height:1;
+  }
+  /* 空位行没有 .mped 兜底，.msb 必须可缩（窄屏 360px 时让「点击抽取…」变省略号，好过整行溢出） */
+  .mylist .mrow.slotbtn .msb{flex:0 1 auto;color:var(--accent);font-weight:700}
+  .mylist .mrow.slotbtn:hover{background:#eef4f0;border-style:solid}
+  .mylist .mrow.slotbtn:active{transform:scale(.995)}
+  /* 动作行：只剩「锁定开赛」一件事 —— 抽取入口在空位上，这里不再重复摆一个按钮 */
+  .pickact{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .pickact .note{font-size:12.5px;color:var(--muted)}
+  .candgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;align-items:start}
+  @media(max-width:767px){.candgrid{grid-template-columns:1fr}}
+  /* 【2026-09-13 撤下 .candcell】候选收进抽取弹窗后，.cand 直接挂在 .candgrid 下。
+     这个「每卡一个格子」的包裹层原本只为让「卡下浮出的确认条」与卡同列
+     （栅格 auto-fill，窗口一宽就是一行 3+ 张；条若横跨整行会被读成「这一行共用一条」）——
+     确认条已移到弹窗吸底条，格子随之取消。卡片等高仍由脚本 syncCandHeights()
+     量出本批最高的自然高度、写 --cand-min-h 保证（栅格 align-items:start 亦保留）。 */
+  .cand{
+    background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+    padding:12px;position:relative;cursor:pointer;font-family:inherit;text-align:left;
+    min-height:var(--cand-min-h,0);   /* 由脚本按本批最高自然高度写入（.candgrid 上） */
+    transition:transform .14s ease,border-color .14s ease,box-shadow .14s ease;
+  }
+  /* 候选卡的错峰入场：只在**换页 / 换池**（真的换了一批卡）时播 */
+  .cand.into{animation:rise .3s cubic-bezier(.2,.7,.3,1) both}
+  .cand:hover{transform:translateY(-2px);border-color:var(--accent);box-shadow:var(--shadow)}
+  .cand:disabled{cursor:not-allowed;opacity:.45}
+  /* 二次确认（2026-09-11）：点卡只「选中」，不直接入名单；下方浮出确认条后才真正加入 */
+  .cand.sel{border-color:var(--accent);box-shadow:inset 0 0 0 2px var(--accent),var(--shadow);transform:translateY(-2px)}
+  .cand.sel::after{
+    content:"✓";position:absolute;top:-7px;right:-7px;width:20px;height:20px;border-radius:99px;
+    background:var(--accent);color:var(--accent-ink);font-size:13.5px;font-weight:800;
+    display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow);
+  }
+  .cand .top{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:9px}
+  .cand .dname{font-family:var(--head-font);font-size:15px;font-weight:700;letter-spacing:.01em}
+  .cand .sex{font-size:12px;color:var(--muted)}
+  .cand .sex b{color:var(--text)}
+  /* 【2026-09-13 候选卡改「横排成对」】照线上参照版 banushi-game 的 .horse-card-meta
+     （实测其 CSS：display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12px；子项写「标签：<b>值</b>」，
+     值加粗以在密集小字里区分标签与值）。旧稿「固定 40px 标签列 ＋ 值、每项独占一行」：
+     360px 屏上每行白扔 48px 横向（40 标签 ＋ 8 间隙），6 个字段＝6 行 ⇒ 单卡高 ≈250px、
+     一屏只塞 2 张多 —— 手机端因此显得又长又碎。
+     改后：塞不下才折行。短字段（父 / 母父 / 落札）能两个并排，长字段（生産 / 馬主 / 厩舎）独占一行，
+     6 字段实测落到 2~3 行、单卡高 ≈150px。字段集、顺序、披露口径（「？？」淡显）全部不动。
+     注：标签后的「：」写在 HTML 里（.k 内），故 .k 要 nowrap —— 冒号与标签不能拆到两行。 */
+  .kvs{display:flex;flex-wrap:wrap;gap:4px 10px}
+  .kv{display:inline-flex;align-items:baseline;font-size:12.5px;line-height:1.5;min-width:0}
+  .kv .k{color:var(--muted);white-space:nowrap}
+  .kv .v{color:var(--text);font-weight:700;min-width:0;overflow-wrap:anywhere}
+  .kv .v.hide{color:var(--muted);letter-spacing:.1em}
+  .kv .v.price{font-family:var(--num-font)}
+  /* 血统徽章（2026-09-11 起回到候选卡）：牝系近亲重赏标签 + 5 代 cross 摘要 */
+  .badges{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px}
+  /* 【2026-09-13 手机端再收一档】横排成对已把 6 行压到 2~3 行，这里再挤掉纵向空气：
+     卡片内边距上下 12→10px（左右保持 12px，值贴边反而不清爽）、字段行间隙 4→3px、
+     标题行与徽章行的上间距 9→7px。目标 ＝ 360px 屏「一屏看到 4 张卡」。
+     注：本块必须写在 .cand / .kvs / .badges 基础规则**之后**（同权重、后写者胜），
+     否则会被上面刚改的横排规则覆盖掉。 */
+  @media(max-width:767px){
+    .cand{padding:10px 12px}
+    .cand .top{margin-bottom:7px}
+    .kvs{gap:3px 9px}
+    .badges{margin-top:7px}
+  }
+  /* 【已停用 · 2026-09-13】确认条 .confirmbar（含 ::before 小箭头、.into 入场、.btn 等宽）：
+     选中卡下方浮出的「确认加入名单 ／ 取消」两个键。确认动作上移到抽取弹窗的**吸底条**后，
+     这张条失去宿主（它依附 .candcell 与候选常驻区）；且用户裁定取消键多余 ——
+     撤选的出口本来就有两个，都比一个按钮省事：① 再点同一张卡（选卡是开关）；② 关窗。
+     留档备查：若日后回到「候选常驻主区」，把它连同 .candcell 一起原样搬回来即可。 */
+  .sidenote{margin-top:8px;font-size:12px;color:var(--muted);line-height:1.65}
+  /* 【已停用 · 2026-09-13】名单栏侧栏那一组：.roster（吸顶 300px 侧栏）/
+     .sexcount（牡・牝・合计计数条）/ .slots ・.slot ・.sn ・.ss ・.sp（10 宫格名单）/
+     .fillednote（满员后替换候选区的提示，而候选区已收进弹窗）。
+     撤下 .roster 的是「名单主区」这个口径；.sexcount 的实时计数则是另一条单独裁定：
+     把三类约束摊成常驻计数栏，等于替玩家把判断做了 —— 信息给够，玩家自己会看。
+     现在这两类计数只在**抽取弹窗的候选条**上出现一次（见 .pkneed），关窗即消失。
+     名单本身改为 .mylist ・.mrow 行式铺开（见「选马页」一节的注释）。
+     仅 @keyframes pop 保留 —— 名单行 .mrow.pop 仍要播这一下。 */
+  @keyframes pop{0%{transform:scale(.86)}60%{transform:scale(1.06)}100%{transform:scale(1)}}
+
+  /* ============ 3. 推演页 ============ */
+  .timeline{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-bottom:16px}
+  .tl{border-top:2px solid var(--line);padding-top:9px;position:relative}
+  .tl.on{border-color:var(--accent)}
+  .tl .tk{font-size:11px;letter-spacing:.12em;color:var(--muted);font-weight:700}
+  .tl.on .tk{color:var(--accent)}
+  .tl h4{font-family:var(--head-font);font-size:14.5px;margin-top:3px}
+  .tl p{margin:3px 0 0;font-size:12px;color:var(--muted)}
+  .noderow{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+  .stack{display:flex;flex-direction:column;gap:12px}
+  .fold{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);overflow:hidden}
+  .fold>summary{
+    padding:10px 12px;background:var(--surface-2);cursor:pointer;list-style:none;
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    font-family:var(--head-font);font-size:14px;
+  }
+  .fold>summary::-webkit-details-marker{display:none}
+  .fold>summary span{font-family:var(--font-sans);font-size:12px;color:var(--muted)}
+  .fold .body{padding:0}
+  .fold .body.pad{padding:12px}
+  /* 节点的「逐行落下」：只在**换页 / 推进节点**时播，页内展开逐场不重播整表 */
+  table.rows tbody tr.drop.into{animation:drop .42s cubic-bezier(.2,.7,.3,1) both}
+  @keyframes drop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+  .voidbox{
+    margin:12px;padding:12px;border:1px solid var(--danger);border-radius:var(--radius);
+    background:var(--surface);font-size:13px;line-height:1.8;
+  }
+  .voidbox .ck{font-size:11px;font-weight:800;letter-spacing:.14em;color:var(--danger)}
+  .voidbox p{margin:6px 0 0;color:var(--muted)}
+  .voidbox b{color:var(--text)}
+
+  /* 推进条：左下事件入口 + 右下「继续模拟」（2026-09-11 推演页改版） */
+  .tl.cur{border-color:var(--gold)}
+  .tl.cur .tk{color:var(--gold)}
+  .simfoot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:14px}
+  .simfoot .evs{display:flex;gap:8px;flex-wrap:wrap}
+  .simfoot .acts{margin:0;padding:0;border:none}
+  .evchip{
+    font-family:inherit;font-size:12.5px;padding:5px 11px;border-radius:99px;cursor:pointer;
+    border:1px solid var(--line);background:var(--surface);color:var(--muted);
+    display:inline-flex;align-items:center;gap:6px;transition:transform .12s ease;
+  }
+  .evchip:hover{transform:translateY(-1px)}
+  .evchip.bad{border-color:var(--danger);color:var(--danger);font-weight:700}
+  .evchip.gold{border-color:var(--gold);color:var(--gold);font-weight:700}
+
+  /* ============ 4. 结算页 ============ */
+  .scorewrap{display:flex;align-items:flex-end;gap:26px;flex-wrap:wrap;margin:6px 0 20px}
+  .scorebig{
+    font-family:var(--num-font);font-variant-numeric:tabular-nums;
+    font-size:clamp(38px,7vw,58px);line-height:1;font-weight:700;color:var(--accent);
+  }
+  .scoremeta{font-size:13px;color:var(--muted);line-height:2}
+  .scoremeta b{color:var(--gold)}
+  /* 结算页双列 / 单列：默认单列堆叠，避免 1280px 视口下表格被压到 700px 内
+     导致日文姓名（马名 / 马主 / 厩舎）逐字竖排；≥1400px 才并排，右列 sticky 跟随 */
+  .rgrid{display:grid;grid-template-columns:1fr;gap:16px;align-items:start}
+  @media(min-width:1400px){.rgrid{grid-template-columns:1.7fr 1fr;gap:18px}}
+  .rgrid>.rgrid-side{position:sticky;top:52px;align-self:start;max-height:calc(100vh - 60px);overflow:auto}
+  .cutcard{border:1px solid var(--danger);border-radius:var(--radius);background:var(--surface);padding:12px}
+  .cutcard .ck{font-size:11px;font-weight:800;letter-spacing:.14em;color:var(--danger)}
+  .cutcard h4{margin:7px 0 6px;font-family:var(--head-font);font-size:15px}
+  .cutcard p{margin:0;font-size:13px;line-height:1.8;color:var(--muted)}
+  .cutcard p b{color:var(--text)}
+  .acts{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}
+
+  /* IF 卡 */
+  .ifcard{
+    position:relative;border-radius:var(--radius);padding:12px;margin-top:16px;
+    background:#fffdf6;border:1px solid var(--gold);
+  }
+  .ifcard .iftag{
+    position:absolute;top:-8px;left:10px;font-size:10.5px;font-weight:800;letter-spacing:.16em;
+    padding:2px 7px;border-radius:2px;background:#5b3a7e;color:#fff;
+  }
+  .ifcard h4{margin:6px 0 5px;font-size:14px;font-family:var(--head-font)}
+  .ifcard p{margin:0;font-size:13px;line-height:1.75;color:var(--muted)}
+  .ifcard p.hi{color:var(--text)}
+  .ifcard .dis{margin-top:7px;font-size:11px;color:var(--muted);opacity:.9}
+
+  /* ============ 逐场轨迹（2026-09-11 由原「复盘页」合并进推演页 / 结算页） ============ */
+  /* 2026-09-11 用户反馈「日期与赛事名贴太近」：日期列原为固定 72px，而 mono 字体下
+     10 字符的日期（2023.10.09）已吃掉 ≈66～70px，只剩列间距 8px 撑不开 —— 且字宽一变就压到赛事名。
+     改为 auto 取内容自然宽 ＋ 右侧 9px 内边距，与 8px 列间距叠加 ≈ 17px；
+     其余列间距不动（只在日期与赛事名之间加宽，避免整行松散）。 */
+  .race{display:grid;grid-template-columns:auto minmax(0,1fr) 66px 34px 92px;gap:8px;align-items:center;
+    font-size:12.5px;padding:5px 0;border-top:1px solid var(--line);margin-top:6px}
+  .race .rd{color:var(--muted);font-family:var(--num-font);white-space:nowrap;padding-right:9px}
+  .race .rn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .race .rj{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .race .rr{font-family:var(--num-font);font-weight:700;text-align:center}
+  .race .rp{font-family:var(--num-font);text-align:right;color:var(--muted)}
+  .race .rr.win{color:var(--accent)}
+  .race .rr.out{color:var(--danger);font-weight:700}
+  @media(max-width:767px){
+    .race{grid-template-columns:auto minmax(0,1fr) 52px 28px 62px;gap:6px;font-size:12px}
+    .race .rd{padding-right:6px}   /* 窄屏等比缩：日期↔赛事名 ≈ 12px */
+  }
+  /* ============ 开发导航 / 弹窗 ============ */
+  .devbar{
+    position:fixed;left:0;right:0;bottom:0;z-index:50;
+    background:rgba(30,42,36,.96);color:#cfd8d3;backdrop-filter:blur(8px);
+    border-top:1px solid rgba(255,255,255,.1);
+  }
+  .devbar .inner{
+    max-width:1280px;margin:0 auto;padding:7px 20px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  }
+  .devbar .tag{font-size:11px;letter-spacing:.14em;font-weight:700;color:#8fa79c;margin-right:4px}
+  .dbtn{
+    font-family:inherit;font-size:12.5px;padding:4px 10px;border-radius:99px;cursor:pointer;
+    border:1px solid rgba(255,255,255,.16);background:transparent;color:#cfd8d3;
+  }
+  .dbtn:hover{border-color:#cfd8d3}
+  .dbtn.on{background:#b08d4f;border-color:#b08d4f;color:#241d10;font-weight:700}
+  .devbar .sp{flex:1}
+  .devbar .note{font-size:11.5px;color:#8fa79c}
+  /* 底栏高度由脚本量出后写入 --devbar-h（见脚本末尾）。底栏会随宽度换行，
+     写死 padding-bottom 必然在某些机型压住内容——实测 360px 宽时底栏高 111px，而 body 只留了 72px。 */
+
+  .modal{
+    position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;
+    background:rgba(30,42,36,.44);padding:20px;
+  }
+  .modal.on{display:flex;animation:rise .2s ease both}
+  .sheet{
+    background:var(--surface);border-radius:6px;max-width:660px;width:100%;
+    max-height:84vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);
+  }
+  .sheet .sh{
+    padding:14px 18px;border-bottom:1px solid var(--line);
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+  }
+  .sheet .sh h3{font-family:var(--head-font);font-size:16.5px}
+  .sheet .sb{padding:18px;font-size:14px;line-height:1.9}
+  .sheet .sb h4{font-family:var(--head-font);font-size:14.5px;margin:14px 0 6px}
+  .sheet .sb h4:first-child{margin-top:0}
+  .sheet .sb ul{margin:6px 0;padding-left:18px}
+  .sheet .sb li{margin:4px 0;color:var(--muted)}
+  .sheet .sb li b{color:var(--text)}
+  .x{background:none;border:none;font-size:19.5px;line-height:1;color:var(--muted);cursor:pointer;padding:2px 4px}
+  /* 抽取弹窗（2026-09-13 用户口径：候选从常驻主区收进弹窗，见 index.html 的 #pickModal）：
+     比信息弹窗宽（一屏放得下 10 张卡）；卡片区随内容滚，动作条吸底不随滚。 */
+  .sheet.pick{
+    max-width:1080px;
+    /* 吸底动作条必须始终可点：把弹窗高度压进「视口 − 上下留白」，别让底部压住确认键 */
+    max-height:calc(100vh - var(--devbar-h,0px) - 32px);
+  }
+  .pkbody{padding:14px 16px 16px}
+  .pkbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+  /* 候选条上的「已选几牡几牝 / 还需几匹」：约束自检栏撤下后，这两个最容易记错的计数
+     改成**每次抽候选时给一次** —— 摆在 10 张卡的同一屏上，选完关窗即随它一起去。
+     刚好 5 匹转 ok（绿），超了转 ng（红）。 */
+  .pkneed{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .pkneed b{font-family:var(--num-font);font-size:14.5px;color:var(--text)}
+  .pkneed b.ok{color:var(--accent)}
+  .pkneed b.ng{color:var(--danger)}
+  .pkfoot{
+    position:sticky;bottom:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    padding:10px 16px;border-top:1px solid var(--line);background:var(--surface);
+  }
+  .pkfoot .pkpick{flex:1 1 240px;min-width:0;font-size:13px;color:var(--muted)}
+  .pkfoot .pkpick b{font-family:var(--head-font);color:var(--text)}
+  /* 明细表横向滚动容器（见下方 .tw） */
+  .tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .tw>table.rows{min-width:650px}   /* 追加厩舎列后，窄屏横向滑动的宽度下限同步抬高 */
+  .tw-hint{display:none}
+  @media(max-width:767px){
+    .tw-hint{display:block;font-size:11.5px;color:var(--muted);text-align:center;padding:6px 0 2px}
+    .devbar .note,.devbar .tag{display:none}
+    .devbar .inner{padding:6px 10px;gap:5px}
+  }
+
+  /* ============================================================
+     ↓↓↓ 以下为「可接数据的前端」追加（app/index.html 专用）
+     上面 1~413 行原样抽自 prototype/app.html 的设计系统；除下面这一处外未作改动。
+     【2026-09-13 整体字号上调】用户反馈「整体偏小、看着累」，以线上参照版 banushi-game
+     实测字号为基准（其主力 12~13.5px、最小 9.5px 仅 1 处；本表当时主力 10.5~11.5px，
+     9.5px 却有 11 处）。映射（源 → 新）：8→10、9→10.5、9.5→11、10→11.5、10.5→12、
+     11→12.5、11.5→13、12→13.5、12.5→14、13→14.5、13.5→15、14→15.5、14.5→16、
+     15→16.5、16→17.5、17→18.5、18→19.5、22→25、34→38，clamp 34/54→38/58。
+     共 73 处；微字全部退出 10px 以下。同步放宽会被撑爆的固定尺寸（旧 → 新）：
+     .slot min-height 52→58、.roster 吸顶 64→68、.race 列宽 62/30/84→66/34/92
+     （窄屏 48/24/54→52/28/62）、.tw 下限 610→650、.sheet 宽 620→660、
+     .topbar 内边距 10px→12px（顶栏随之变高，故吸顶位同抬）。
+     ============================================================ */
+
+  /* 本前端无底部原型导航条 ⇒ 收回为底栏预留的滚动空间 */
+  :root{--devbar-h:0px}
+  body{padding-bottom:34px}
+
+  /* 时间轴档位数随推进节奏变（半年 3 ／ 季度 6）——原型写死 3 列 */
+  .timeline.p6{grid-template-columns:repeat(6,minmax(0,1fr))}
+  @media(max-width:900px){.timeline.p6{grid-template-columns:repeat(3,minmax(0,1fr));row-gap:14px}}
+  @media(max-width:520px){.timeline.p6{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+  /* 加载 / 报错 */
+  .loadbox{padding:56px 20px;text-align:center;color:var(--muted);font-size:14px;line-height:2}
+  .loadbox .spin{
+    display:inline-block;width:13px;height:13px;vertical-align:-2px;margin-right:8px;
+    border:2px solid var(--line);border-top-color:var(--accent);border-radius:99px;
+    animation:spin .75s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .errbox{border:1px solid var(--danger);border-radius:var(--radius);background:var(--surface);padding:16px;font-size:14px;line-height:1.9}
+  .errbox .ck{font-size:11px;font-weight:800;letter-spacing:.14em;color:var(--danger)}
+  .errbox h4{font-family:var(--head-font);font-size:15px;margin:8px 0 6px}
+  .errbox pre{
+    margin:10px 0 0;padding:10px;background:var(--surface-2);border-radius:var(--radius);
+    font-family:var(--num-font);font-size:12.5px;white-space:pre-wrap;word-break:break-all;color:var(--muted);
+  }
+  .errbox ol{margin:8px 0 0;padding-left:20px;color:var(--muted)}
+  .errbox li{margin:3px 0}
+
+  /* 明细表里被移除的那匹马 */
+  table.rows tr.gone td{opacity:.42}
+  table.rows tr.gone td.c-score{color:var(--danger);text-decoration:line-through;text-decoration-color:var(--danger)}
+  .sub{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
+  .sub.bad{color:var(--danger);font-weight:700;text-decoration:none}
+  .sub.gold{color:var(--gold);font-weight:700}
+  /* 血统列：父 / 母各占一行（母在节点 2 前恒「？？」） */
+  td.c-ped{font-size:12.5px;line-height:1.5;min-width:150px}
+  td.c-ped .hide{color:var(--muted);letter-spacing:.08em}
+  /* 贡献占比条 */
+  td.c-share{width:88px}
+  td.c-share .bar{margin-top:0}
+
+  /* 结算页「那一刀」复用 .cutcard；IF 卡可叠多张 */
+  .ifstack>.ifcard{margin-top:16px}
+  .ifstack>.ifcard:first-child{margin-top:0}
+  .ifcard .opline{
+    font-family:var(--num-font);font-size:12.5px;color:var(--text);
+    background:var(--surface-2);border-radius:var(--radius);padding:6px 8px;margin:7px 0 0;line-height:1.7;
+  }
+  .ifcard .opline i{font-style:normal;color:var(--gold);font-weight:700}
+
+  /* 候选卡里「不可见」的字段（马主 / 厩舎未披露） */
+  .kv .v.gone{color:var(--muted);letter-spacing:.12em}
+
+  /* 【已停用 · 2026-09-13】.slot .sg（名单槽空位里的「需牡 N 匹」指示）：
+     随 10 宫格名单一起撤下 —— 空位现在写「空位 · 待第 N 轮抽取」，
+     而「还需几牡几牝」只在抽取弹窗的候选条上给一次（见 .pkneed）。 */
+
+  /* 推演页表尾总分 */
+  table.rows tfoot td.c-sum{font-family:var(--num-font);font-size:14.5px;text-align:right;color:var(--accent)}
+  table.rows tfoot td.c-sum.pend{color:var(--muted)}
+  .racemore{font-size:12px;color:var(--muted);padding-top:6px}
+
+  /* 【已停用 · 2026-09-13】名单栏自检那一组（.selfcheck ・sc-hd ・sc-row ・sc-k ・sc-v ・.bgrp）：
+     2026-09-13 早先按「玩家反馈选完没处看牧场信息，很容易忘记、掉进陷阱」把三类约束
+     （性別 / 牧场档 / 同父）的机械计数摊成常驻栏；同日用户裁定**撤下** ——
+     把计数实时摊出来，等于替玩家把判断做了；信息给够，玩家自己会看。
+     三类约束现只在页面上留一句「规则」（不是实时计数，见 viewDraft 的 .sidenote），
+     而「已选几牡几牝 / 还需几匹」随抽取弹窗给一次（见 .pkneed）。
+     仅 .tier 保留 —— 「我的牧场」弹窗仍在用。 */
+  /* 档位复核标签：只在「玩家自己名单」上出现（我的牧场弹窗） */
+  .tier{
+    display:inline-block;margin-left:5px;padding:0 5px;border-radius:99px;font-size:10.5px;
+    border:1px solid var(--line);background:var(--surface);color:var(--muted);white-space:nowrap;
+  }
+  .tier.t1{border-color:var(--accent);color:var(--accent);font-weight:700}
+  .tier.t2{border-color:var(--gold);color:var(--gold);font-weight:700}
+  /* 【已停用 · 2026-09-13】.slot .sbr（名单槽里的生産牧場行）：随 10 宫格名单撤下。
+     新名单的同一件事落在 .mrow .mped 上 —— 那里同样要保证长名
+     （社台コーポレーション白老ファーム）可折行、不被省略号吃掉，
+     但**不用 word-break:break-all**：行式名单整幅宽，日文/中文自然折行即可。 */

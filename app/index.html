@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ZOG 传奇模式</title>
+<!-- 设计系统从 prototype/app.html 原样抽出，未作改动；本前端专用的追加规则在文件末尾 -->
+<link rel="stylesheet" href="styles.css?v=0.35">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="inner">
+    <div class="l">
+      <span class="brand">ZOG</span>
+      <span class="meta" id="topMeta"></span>
+    </div>
+    <div class="r">
+      <div class="steps" id="topSteps"></div>
+      <button class="mini" id="btnHome">标题页</button>
+    </div>
+  </div>
+</header>
+
+<main id="app"></main>
+
+<div class="modal" id="modal">
+  <div class="sheet">
+    <div class="sh">
+      <h3 id="mTitle">标题</h3>
+      <button class="x" id="mClose">×</button>
+    </div>
+    <div class="sb" id="mBody"></div>
+  </div>
+</div>
+
+<!-- 抽取弹窗（2026-09-13 用户口径：名单升为主区、候选收进弹窗、抽取入口长在空位上）：
+     必须挂在 #app 之外 —— 选卡/换池都会触发 #app 整树重绘，挂里面会被冲掉。
+     与 #modal 分开是有意的：#modal 的 closeModal() 带「IF 世界线挂起」语义，抽取弹窗不该牵扯其中。
+     主体 #pkBody 由 renderPick() 重绘；吸底条是静态节点，只改文案与 disabled。
+     ⚠️ 「确认加入名单」这颗键必须带 data-confirm：pickModal 的事件委托按它匹配
+     （见 app.js 的 $('pickModal') 监听），属性丢了就是「点了没反应」的死键。 -->
+<div class="modal" id="pickModal">
+  <div class="sheet pick">
+    <div class="sh">
+      <h3 id="pkTitle">抽取候选</h3>
+      <button class="x" id="pkClose">×</button>
+    </div>
+    <div class="pkbody" id="pkBody"></div>
+    <div class="pkfoot">
+      <div class="pkpick" id="pkPick"></div>
+      <button class="btn" id="btnConfirm" data-confirm="1" disabled>确认加入名单</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js?v=0.35"></script>
+</body>
+</html>

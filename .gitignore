@@ -1,0 +1,12 @@
+# 过程文件与体积大户：任何时候都不该进这个仓库
+*.sql
+*.sql.zip
+*.zst
+*.sqlite
+*.sqlite3
+tools/
+
+# 站点本体里用不上的系统/编辑器垃圾
+.DS_Store
+Thumbs.db
+*.log
