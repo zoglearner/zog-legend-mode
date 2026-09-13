@@ -413,13 +413,19 @@
      写死 padding-bottom 必然在某些机型压住内容——实测 360px 宽时底栏高 111px，而 body 只留了 72px。 */
 
   .modal{
-    position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;
-    background:rgba(30,42,36,.44);padding:20px;
+    position:fixed;inset:0;z-index:60;display:none;justify-content:center;
+    background:rgba(30,42,36,.44);padding:var(--modal-pad);
+    overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
   }
   .modal.on{display:flex;animation:rise .2s ease both}
+  /* 【2026-09-13 修「确认键按不到」】居中不再用 align-items:center，改由 .sheet 的
+     margin:auto 承担。原因：flex 居中在「子元素比容器高」时会把上下**一起**裁掉，
+     而 .modal 是 position:fixed、自己不滚动 ⇒ 被裁掉的底部（吸底确认键）永远够不到。
+     改成「装得下就居中、装不下由 .modal 自己滚」后，屏幕再矮也能把确认键滚出来。 */
   .sheet{
     background:var(--surface);border-radius:6px;max-width:660px;width:100%;
-    max-height:84vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);
+    max-height:84vh;max-height:84dvh;overflow:auto;margin:auto;
+    box-shadow:0 20px 60px rgba(0,0,0,.3);
   }
   .sheet .sh{
     padding:14px 18px;border-bottom:1px solid var(--line);
@@ -437,8 +443,13 @@
      比信息弹窗宽（一屏放得下 10 张卡）；卡片区随内容滚，动作条吸底不随滚。 */
   .sheet.pick{
     max-width:1080px;
-    /* 吸底动作条必须始终可点：把弹窗高度压进「视口 − 上下留白」，别让底部压住确认键 */
-    max-height:calc(100vh - var(--devbar-h,0px) - 32px);
+    /* 吸底动作条必须始终可点：把弹窗高度压进「视口 − 上下留白」，别让底部压住确认键。
+       必须用 100dvh 而非 100vh —— 手机浏览器里 100vh ＝ **地址栏收起后**的大视口，
+       比真实可见高度高出一截（实测差 60~100px），vh 版会把吸底条整个顶到屏幕外，
+       这正是「手机上按不到『确认加入名单』」的直接原因；dvh 随工具栏收放实时变化。
+       --modal-pad 必须与 .modal 的 padding 同源，否则高度上限算不准。 */
+    max-height:calc(100vh - var(--devbar-h,0px) - var(--modal-pad)*2);
+    max-height:calc(100dvh - var(--devbar-h,0px) - var(--modal-pad)*2);
   }
   .pkbody{padding:14px 16px 16px}
   .pkbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;flex-wrap:wrap}
@@ -480,8 +491,52 @@
      ============================================================ */
 
   /* 本前端无底部原型导航条 ⇒ 收回为底栏预留的滚动空间 */
-  :root{--devbar-h:0px}
+  /* --modal-pad：弹窗四周留白。.modal 与 .sheet.pick 的高度算式**共用**它（见上），
+     改一处必须两处同步，否则 .sheet.pick 的高度上限会算错。 */
+  :root{--devbar-h:0px;--modal-pad:20px}
   body{padding-bottom:34px}
+
+  /* 同一句话的宽/窄两版：默认给宽版，≤767px 换窄版。
+     用处是把「手机上必然折行」的两处文案各自换成短写 ——
+     不再是缩小字号（2026-09-13 已按用户口径整体上调过字号，不能再退回去）。 */
+  .narrowonly{display:none}
+  @media(max-width:767px){
+    .wideonly{display:none}
+    .narrowonly{display:inline}
+  }
+
+  /* 【2026-09-13 窄屏弹窗：把版面还给候选卡】线上实测两件事：
+     ① 「确认加入名单」按不到 —— 主因见 .sheet.pick 的 dvh 注释；
+     ② 弹窗内的说明文字与动作条吃掉大半屏，一屏只剩 1 张完整卡片。
+     逐项挤掉纵向空气（实测 360×560 下弹窗高 544px，固定开销原本 238px）：
+     留白 20→8px、标题行 14→9px、候选条压平（.lbl 与弹窗标题「第 N 轮 · 抽取候选」
+     重复，窄屏整行省掉）、吸底条改 nowrap —— 原文案把 .pkpick 的下限撑到 240px，
+     360px 屏上必然把确认键折到第二行，那正是「老是按不到」的第二个原因。
+     注：字号一处未动，只动留白与折行。 */
+  @media(max-width:767px){
+    :root{--modal-pad:8px}
+    #pickModal .sh{padding:9px 12px}
+    .pkbody{padding:8px 12px 10px}
+    .pkbar{gap:6px 8px;margin-bottom:8px}
+    .pkbar .lbl{display:none}
+    .pkbar .btn.ghost{padding:6px 10px;font-size:13px}
+    .pkfoot{padding:6px 12px;gap:8px;flex-wrap:nowrap}
+    /* 【2026-09-13 修「选中/取消时吸底条跳来跳去」】这段文案随选中态在两种长度间切换：
+       未选「点卡片选中一匹…」（2 行）／已选中「已选中 ？？の2021 · 牡 2 歳 · 父 …」
+       （2~3 行，取决于父名长短）。360px 屏上 .pkpick 只有约 198px 宽，
+       遇到 11 字的长父名（如 ブリックスアンドモルタル）就折到第 3 行、高 54px
+       —— 高过确认键的约 40px，吸底条随之从 55px 撑到 67px。
+       .sheet 是 overflow:auto ＋ margin:auto：吸底条一变高，满一屏时表现为候选区被挤压、
+       .sheet 的 scrollHeight 改变令滚动位置错位；不满一屏时整个弹窗还会上下弹一次。
+       用户看到的「卡片跳来跳去、像整页都在动」即此。
+       这里钉死两行（2.9em ＝ 2 × 1.45，低于确认键高度）：.pkfoot 的高度自此恒由确认键
+       决定，文案长短不再参与布局。overflow:hidden 只是兜底 —— 文案已同步去掉与候选区
+       说明重复的「（再点取消）」，最长父名下也正好两行。
+       宽屏不锁：.pkpick 可用宽 >600px，最长文案也稳在 1 行，本就不跳。 */
+    .pkfoot .pkpick{flex:1 1 0;font-size:12.5px;line-height:1.45;height:2.9em;overflow:hidden}
+    .pkfoot .btn{flex:0 0 auto;padding:10px 14px;white-space:nowrap}
+    .sidenote{font-size:11.5px;line-height:1.5;margin-top:6px}
+  }
 
   /* 时间轴档位数随推进节奏变（半年 3 ／ 季度 6）——原型写死 3 列 */
   .timeline.p6{grid-template-columns:repeat(6,minmax(0,1fr))}
