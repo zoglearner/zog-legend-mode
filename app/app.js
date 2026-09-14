@@ -264,13 +264,28 @@ function normDate(s) { return Number(String(s).replace(/-/g, '')); }
    匹配是两步：先「日期 ＋ 赛事名」精确匹配；失败再退化为「当日仅一场」。
    为什么需要兜底：事件表里常用官方简称（チャンピオンズC / ジャパンC / オパールS），而库里是全称
    （…カップ / …ステークス）—— 精确匹配会落空，而落空的 drop 表现为「新的场次加进来了、老的没去掉」
-   （2026-09-13 用户报）；落空的 set 则是改写完全没生效。数据侧同时已把这三条改成全称。 */
+   （2026-09-13 用户报）；落空的 set 则是改写完全没生效。数据侧同时已把这三条改成全称。
+   【2026-09-14 用户报「名次改了，骑手忘了改」】改写过去只动 f / p 两个字段，行上的鞍上（j）与级别（g）
+   仍留着现实的 —— add 更是直接钉死 -1 / 0（表上就是「—」和不带级别）；于是 02 / 19 的文案里
+   明明换了人（戸崎圭太 / Ｃ．デム），比赛表上还是旧骑手。现在 jockey / grade 由事件表写明、这里落地，
+   与 f / p 同一套「写明才覆盖」。
+   鞍上为什么在数据里写**名字**而不是下标：事件表是手写的、不随数据包重建，而下标会因一次字典重建
+   整体位移 —— 名字写错能被 tools/check_if_ops.py 当场抓住，下标写错只会静默指到另一个人身上。 */
+let jkIndex = null;                          /* dict.json.jockey 的名字 → 下标（全局字典，一局内不变） */
+function jockeyIdx(name) {
+  if (!jkIndex) { jkIndex = new Map(); D().jockey.forEach((n, i) => jkIndex.set(n, i)); }
+  const i = jkIndex.get(name);
+  if (i === undefined) console.warn('[IF] 骑手名不在 dict.json.jockey 里：', name);
+  return i === undefined ? -1 : i;
+}
+
 function ifRewrite(ketto) {
   const rows = traceOf(ketto, lastCut()).map(r => ({ ...r }));
   const ops = [];
   state.ifHits.filter(h => h.hero === ketto).forEach(ev => ev.rewrite.forEach(op => ops.push({ ev, op })));
   for (const item of ops) {
     const op = item.op, d = normDate(op.race[0]), nm = op.race[1];
+    const jk = op.jockey ? jockeyIdx(op.jockey) : -1;      /* 没写鞍上 ＝ 这一场不动鞍上 */
     let i = rows.findIndex(x => x.d === d && x.r === nm);
     if (i < 0) {
       const day = rows.map((x, n) => [x, n]).filter(p => p[0].d === d);
@@ -279,11 +294,18 @@ function ifRewrite(ketto) {
     if (op.op === 'drop') { if (i >= 0) rows.splice(i, 1); else console.warn('[IF] drop 找不到场次', item.ev.name, nm, d); }
     else if (op.op === 'add') {
       if (i >= 0) { rows[i].f = op.finish; rows[i].p = op.prize; rows[i].rw = true; }   /* 已有同名同日 ⇒ 覆盖，不追加 */
-      else rows.push({ d, r: nm, g: 0, j: -1, f: op.finish, p: op.prize, added: true });
+      /* 库里没有这一场 ⇒ 行是凭空造的，级别与鞍上只能取自事件表（缺了就是「无级别 / —」） */
+      else rows.push({ d, r: nm, g: op.grade ?? 0, j: jk, f: op.finish, p: op.prize, added: true });
     }
     else if (op.op === 'set') { if (i >= 0) { rows[i].f = op.finish; rows[i].p = op.prize; rows[i].rw = true; } else console.warn('[IF] set 找不到场次', item.ev.name, nm, d); }
     else if (op.op === 'prize') { if (i >= 0) { rows[i].p = op.prize; rows[i].rw = true; } else console.warn('[IF] prize 找不到场次', item.ev.name, nm, d); }
     else if (op.op === 'nf') { if (i >= 0) { rows[i].f = 0; rows[i].p = 0; rows[i].nf = op.nf; rows[i].rw = true; } else console.warn('[IF] nf 找不到场次', item.ev.name, nm, d); }
+    /* 已有行上的鞍上 / 级别：同样「写明才覆盖」。
+       ⚠️ drop 必须排除 —— 上面已经 splice 掉了那一行，此时 i 指向的已经换成邻行，再写就改错马。 */
+    if (op.op !== 'drop' && i >= 0) {
+      if (jk >= 0) rows[i].j = jk;
+      if (op.grade !== undefined) rows[i].g = op.grade;
+    }
   }
   rows.sort((a, b) => a.d - b.d);
   return rows;
@@ -349,6 +371,19 @@ function rollIfs() {
   });
 
   state.ifHits = pool.filter(e => hit[e.id]);
+}
+
+/* 被「那一刀」移出名单的马，IF 命中一并作废（2026-09-14 用户报「违规被扣掉的马依然会触发 IF 线」）。
+   时序是硬伤：掷定在名单锁定那刻（节点 0，见上），而谁会被移除要到节点 2 结算陷阱才知道 ——
+   因此只能事后回收，没法在掷的时候就绕开它。
+   为什么在源头动刀：卡片、净增分、「N 处」计数、结算页内嵌的同一份 ifBody()，
+   读的都是 state.ifHits 这一份数据 —— 分散到各渲染处过滤，迟早漏掉一处。
+   作废后连带自洽：结算页「那一刀」卡片里的「本可贡献 X」也回到它的真值分，
+   不再显示一条并不存在的世界线上的分数。 */
+function purgeIfsOfRemoved() {
+  const gone = new Set((state.trapRemoved || []).map(r => r.ketto));
+  if (!gone.size) return;
+  state.ifHits = state.ifHits.filter(h => !gone.has(h.hero));
 }
 
 /* ---------------------------------------------------------------- 状态 */
@@ -423,7 +458,13 @@ function save() {
       roster: state.roster, batch: state.batch, seen: state.seen, refreshes: state.refreshes,
       pick: state.pick, pickOpen: state.pickOpen,
       progress: state.progress, flows: state.flows,
-      ifHits: state.ifHits, seenTrap: state.seenTrap, seenIf: state.seenIf
+      /* 【2026-09-14】补上原先漏掉的两个字段，它们各自对应一处「续档后算错 / 玩不下去」：
+         ① trapRemoved 缺 ⇒ 在节点 2 之后再续档，被那一刀移除的马复活：重新计入总分、
+            结算页「被移除 0 匹」、陷阱 chip 消失；
+         ② pendingIf 缺 ⇒ 终局事件卡还开着就续档，恢复后 seenIf 停在 false，而卡片不会自己回来，
+            总分永远停在「待定格」—— §4.3 的定格时机再也到不了。 */
+      trapRemoved: state.trapRemoved, ifHits: state.ifHits,
+      seenTrap: state.seenTrap, seenIf: state.seenIf, pendingIf: state.pendingIf
     }));
   } catch (e) { /* 隐私模式下 localStorage 可能不可写，静默降级 */ }
 }
@@ -1344,11 +1385,29 @@ document.addEventListener('click', async e => {
          pick 必须校验它**仍在本批里** —— 脏存档或换过池的旧档里，它可能指向一匹已不在候选中的马。 */
       pick: (s.pick && batch.includes(s.pick)) ? s.pick : null,
       pickOpen: !!s.pickOpen && (s.roster || []).length < MAX,
-      ifHits: s.ifHits || [], seenTrap: !!s.seenTrap, seenIf: !!s.seenIf
+      ifHits: s.ifHits || [], seenTrap: !!s.seenTrap, seenIf: !!s.seenIf,
+      trapRemoved: Array.isArray(s.trapRemoved) ? s.trapRemoved : null,
+      pendingIf: !!s.pendingIf
     });
     await loadSeason(state.season);
+    /* 【2026-09-14】旧档（v=0.46 及以前）没有上面两个字段，就地补账 —— 两者都能从手上已有的信息
+       确定性还原，不需要给存档升版本号、也不会补出与当初不同的结果：
+       · trapRemoved：陷阱结果只依赖「名单 ＋ 段真值」（seg.seg 随 loadSeason 已到手，与逐场段无关），
+         拿同一把尺重算即可，逐匹与当初那一刀一致；
+       · pendingIf：定格只发生在「关掉事件卡」那一刻（见 closeModal）⇒ 终局 ＋ 命中 IF ＋ 尚未定格
+         三者同时成立，当初存档时卡必然正开着，于是把这一状态还原回去。 */
+    if (!state.trapRemoved && state.progress >= trapNode()) state.trapRemoved = settleTrap();
+    if (!state.pendingIf && state.progress >= paceLen() && state.ifHits.length && !state.seenIf) state.pendingIf = true;
+
     if (state.progress === 0 && !isFull()) { await enterDraft(true); }
-    else { state.screen = 'season'; await preloadFor(); render({ page: true }); }
+    else {
+      state.screen = 'season';
+      await preloadFor();
+      render({ page: true });
+      /* 玩家续档时正看着的那张 IF 事件卡不该凭空消失 —— 原地放回去，
+         关掉它才定格总分（与 advance() 里终局那一刻的处置完全一致）。 */
+      if (state.pendingIf) openModal('IF 世界线 · 本局变动', ifBody());
+    }
   }
 });
 
@@ -1394,6 +1453,7 @@ async function advance() {
     if (k === trapNode()) {
       state.trapRemoved = settleTrap();
       state.seenTrap = false;
+      purgeIfsOfRemoved();           /* 被移除的马不该再有世界线（见该函数注释） */
     }
     let ifFired = false;
     if (k >= paceLen()) {
@@ -1418,7 +1478,7 @@ function restart() {
   Object.assign(state, {
     screen: 'title', season: state.season, pace: null, roster: [], batch: [], seen: {}, pick: null, pickOpen: false,
     refreshes: REFRESH_PER_ROUND, progress: 0, flows: {}, trapRemoved: null, ifHits: [],
-    seenTrap: false, seenIf: false
+    seenTrap: false, seenIf: false, pendingIf: false
   });
   render({ page: true });
 }
