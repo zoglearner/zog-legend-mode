@@ -3,7 +3,7 @@
    ZOG · 单机版 —— 接真实数据的前端（v1）
    ----------------------------------------------------------------------------
    数据源：../assets/data（§5.2 三层分离）
-     manifest.json                全局清单（届列表 + dictVersion）
+     manifest.json                全局清单（届列表 + dictVersion + buildId）
      dict.json                    全局字典（sire / damSire / breeder / owner /
                                   stable / jockey / sale / cross，字段皆字典下标）
      if_events.json               IF 事件（手写、运行时叠加）
@@ -15,6 +15,12 @@
 
    本文件所有派生值一律「按节点现算」（§4.3）：分数 / 成绩串 / 赛 n 场 / 赛果表
    都从 segments 或 races 现算，不预存任何节点快照。
+
+   缓存（2026-09-14）：数据包是「同一个 URL 内容会变」的东西（重建数据不换文件名），
+   而分档请求原用 force-cache ⇒ 老玩家手上的旧数据永远不会更新（数据修了也白修）。
+   现在每次启动**先以 no-store 取 manifest**（仅 200B），拿它的 buildId 给其余所有请求
+   挂 `?v=<buildId>`：数据一重建 URL 就变，force-cache 反而成了「同版本复用」的好处
+    —— pool.json 那 1.5MB 在同一版本内仍只下一次，不吃额外流量。
 
    ⚠️ 已知待办（与数据侧同步）：
      IF 的触发掷骰按 §4.8 应在「届构建期掷定并固化进 pool.json」，但当前构建
@@ -74,9 +80,19 @@ const NODE_META = {
 
 const DB = { manifest: null, dict: null, ifEvents: null };
 const SV = {};                       /* seasonId -> { meta, pool, poolBy, seg, races:{}, segLoaded } */
+let DATA_V = null;                   /* 数据包版本（manifest.buildId）；所有分档请求带它 ⇒ 换数据即换 URL */
+
+/* manifest 是唯一「必须每次问网」的文件（数据换了只有它不会变 URL，见文件头「缓存」）
+   —— 但它只有 200B，且是其余一切的版本来源。 */
+async function jgetManifest() {
+  const res = await fetch(DATA_BASE + 'manifest.json', { cache: 'no-store' });
+  if (!res.ok) throw new Error('manifest.json → HTTP ' + res.status + ' ' + res.statusText);
+  return res.json();
+}
 
 async function jget(rel) {
-  const res = await fetch(DATA_BASE + rel, { cache: 'force-cache' });
+  const suffix = DATA_V ? '?v=' + encodeURIComponent(DATA_V) : '';
+  const res = await fetch(DATA_BASE + rel + suffix, { cache: 'force-cache' });
   if (!res.ok) throw new Error(rel + ' → HTTP ' + res.status + ' ' + res.statusText);
   return res.json();
 }
@@ -151,8 +167,7 @@ const stabCell = (c, k) => stabVisible(c, k) ? esc(stableOf(c)) : '<span class="
 /* ---------------------------------------------------------- 计分 / 成绩串 */
 
 /* 段真值 → 截至某切点（含当日）的累计。全案唯一的「节点口径」实现。 */
-function cum(ketto, cut) {
-  const seg = S().seg.seg[ketto] || [];
+function cumFrom(seg, cut) {
   const grid = meta().cuts;
   let score = 0; const r = [0, 0, 0, 0];
   for (let i = 0; i < grid.length; i++) {
@@ -164,6 +179,61 @@ function cum(ketto, cut) {
   const n = r[0] + r[1] + r[2] + r[3];
   /* 0 场显示 —（只可能来自「全部未発走」）；只要発走过一次就记 1 场、落着外格 */
   return { score, rec: n ? r.join('-') : '—', n, r };
+}
+
+/* 段真值（含 IF 叠加）—— 明细表的 分数 / 成绩串 / 赛 n 场 都从它现算 */
+function cum(ketto, cut) { return cumFrom(segOf(ketto), cut); }
+
+/* ------------------------------------------------ IF 叠加：落在**段**上（§4.8） */
+/* ⚠️ IF 改写必须改**段真值**，不能只在 races 那一侧另算一套分数。
+   segments.json 的段是计分数据唯一的落地形态（§4.3）：明细表的 分数 / 成绩串 全部由 cum() 现算。
+   若 IF 只改写逐场（ifRewrite）而段原封不动，凡读段的口径看到的就还是改写前的旧值 ——
+   「IF 事件好像没有改明细表里的 seg」（2026-09-14 用户报）。§4.8 的原话也是「改写只动受影响的段」。
+
+   叠加的输入刻意取**事件表**而非逐场文件：每条 op 自带改写前真值（wasFinish / wasPrize）
+   与改写后真值（finish / prize / nf），两侧一对正好就是那一段的增减量。
+   好处是段真值不必等 races 拉下来就能改写 —— 逐场只是段的下钻视图，从节点 2 才加载，
+   而段从节点 1 起就一直在用。
+   两条前提由 tools/check_if_ops.py 把住：非 add 的 op 必须能在数据包里找到那一场（否则「减」会
+   把格子减成负数）；add 的场次库里必须还没有（否则「加」会重复计数）—— 一句话，段侧只认「日期」，
+   逐场侧还要认「赛名」，两者要一致就必须让事件表把赛名写到能精确命中（该脚本会报「简称/异名」）。 */
+
+/* 该日期落在第几段（0 起）—— 与构建期 tools/build_season_pack.py 的 seg_index 同一口径 */
+function segOfDate(ds) {
+  const d = String(ds).replace(/-/g, '.');
+  const grid = meta().cuts;
+  for (let i = 0; i < grid.length; i++) if (grid[i] >= d) return i;
+  return -1;
+}
+
+/* 一场比赛在段里的计数增量：完走落 1着/2着/3着 格、≥4 落着外格；
+   非完走只有「中止 4 / 失格 5」算 1 场、归着外格 —— 口径与 recFromRaces 同源，两处必须同步改。 */
+function segCountInto(s, f, nf, sign) {
+  if (f >= 1) s[f <= 3 ? f : 4] += sign;
+  else if (nf === 4 || nf === 5) s[4] += sign;
+}
+
+/* 一匹马的段真值：命中 IF 且已定格 ⇒ 叠加改写，否则原样返回 */
+function segOf(ketto) {
+  const raw = S().seg.seg[ketto] || [];
+  const hits = (state.ifHits || []).filter(h => h.hero === ketto);
+  /* 未定格 ⇒ 仍是改写前的段真值（§4.8：IF 在终局节点才兑现，先于总分定格爆发） */
+  if (!hits.length || !state.seenIf) return raw;
+  const out = meta().cuts.map((_, i) => (raw[i] || [0, 0, 0, 0, 0]).slice());
+  for (const ev of hits) for (const op of ev.rewrite) {
+    const si = segOfDate(op.race[0]);
+    if (si < 0 || !out[si]) { console.warn('[IF] 场次落在段网格之外：', ev.name, op.race[0]); continue; }
+    const s = out[si];
+    if (op.op !== 'add') {                            /* 抹掉改写前的这一场（add ＝ 库里本来没有 ⇒ 只加不减） */
+      s[0] -= op.wasPrize || 0;
+      segCountInto(s, op.wasFinish, op.wasNf, -1);
+    }
+    if (op.op !== 'drop') {                           /* 写上改写后的这一场 */
+      s[0] += op.prize || 0;
+      segCountInto(s, op.finish, op.nf, +1);
+    }
+  }
+  return out;
 }
 
 /* 逐场真值 → 分数 / 成绩串（非完走口径与段真值同源，已全量比对一致） */
@@ -311,30 +381,21 @@ function ifRewrite(ketto) {
   return rows;
 }
 
-/* IF 的最终分数 / 成绩串（单一数据源 = 改写后的逐场） */
+/* IF 的最终分数 / 成绩串。rows（改写后的逐场）只用于逐场下钻视图；
+   分数 / 成绩串本身与段真值（cum → segOf）同源，两处必须算出同一个数。 */
 function ifResult(ketto) {
   const rows = ifRewrite(ketto);
   const res = recFromRaces(rows);
-  const base = cum(ketto, lastCut()).score;
+  /* 基准＝**改写前**的段真值：不能用 cum()（它已含叠加），否则 delta 恒为 0 */
+  const base = cumFrom(S().seg.seg[ketto] || [], lastCut()).score;
   return { rows, score: res.score, rec: res.rec, n: res.n, delta: res.score - base, base };
 }
 
-/* 最终计分（含 IF 叠加）—— 除 IF 主角外一律走段真值 */
-function finalScore(ketto) {
-  const ev = state.ifHits.filter(h => h.hero === ketto);
-  if (ev.length && state.seenIf) return ifResult(ketto).score;
-  return cum(ketto, lastCut()).score;
-}
-function scoreAt(ketto, cut) {
-  const ev = state.ifHits.filter(h => h.hero === ketto);
-  if (ev.length && cut === lastCut() && state.seenIf) return ifResult(ketto).score;
-  return cum(ketto, cut).score;
-}
-function recAt(ketto, cut) {
-  const ev = state.ifHits.filter(h => h.hero === ketto);
-  if (ev.length && cut === lastCut() && state.seenIf) return ifResult(ketto).rec;
-  return cum(ketto, cut).rec;
-}
+/* 计分：IF 叠加已在 segOf/cum 里落地，这三处只需读同一个口径
+   （不再为 IF 主角单开一条分支 —— 那正是「两套口径」的来源） */
+function finalScore(ketto) { return cum(ketto, lastCut()).score; }
+function scoreAt(ketto, cut) { return cum(ketto, cut).score; }
+function recAt(ketto, cut) { return cum(ketto, cut).rec; }
 
 /* 触发掷骰：名单锁定那刻掷一次并固化（见文件头 ⚠️） */
 function rollIfs() {
@@ -1517,9 +1578,9 @@ function rulesHtml() {
 (async function boot() {
   $('app').innerHTML = '<div class="loadbox"><span class="spin"></span>正在载入数据…</div>';
   try {
-    const [man, dict, ife] = await Promise.all([
-      jget('manifest.json'), jget('dict.json'), jget('if_events.json')
-    ]);
+    const man = await jgetManifest();            /* 版本先行：余下请求都要挂它 */
+    DATA_V = man.buildId || man.generatedAt || null;
+    const [dict, ife] = await Promise.all([jget('dict.json'), jget('if_events.json')]);
     DB.manifest = man; DB.dict = dict; DB.ifEvents = ife;
     state.season = man.seasons[0].id;
     await loadSeason(state.season);
