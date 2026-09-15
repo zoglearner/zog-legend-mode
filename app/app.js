@@ -162,7 +162,18 @@ const cutNum = ds => Number(String(ds).replace(/\./g, ''));
 const ownVisible = (c, k) => c.owner >= 0 && (!!c.revealOwner || (!!c.debut && revealNode(c) <= k));
 const stabVisible = (c, k) => c.stable >= 0 && (!!c.revealStable || (!!c.debut && revealNode(c) <= k));
 const ownCell = (c, k) => ownVisible(c, k) ? esc(ownerOf(c)) : '<span class="muted">？？</span>';
-const stabCell = (c, k) => stabVisible(c, k) ? esc(stableOf(c)) : '<span class="muted">？？</span>';
+/* 【2026-09-15】IF 转厩（事件级 stableTo，如 id 09「转入 杉山晴紀 厩」）：命中且已定格
+   ⇒ 厩舎列切到新厩 —— 与 segOf 的段叠加同一兑现时点（state.seenIf），中途节点不剧透。
+   只有明细表两处读方（名单明细 / 最终明细）走 stabCell；候选卡的 stableOf 原值在选马期
+   渲染，IF 尚未掷定，本就不该变。stableTo 写名字（与 rewrite.jockey 同理：手写表不怕
+   字典重建整体位移），构建期 check_if_ops.py 校验其在 dict.stable 内、且与现实厩舎不同；
+   被陷阱移除的马 ifHits 已在源头收走（purgeIfsOfRemoved），此处自动不生效。 */
+const stabCell = (c, k) => {
+  if (!stabVisible(c, k)) return '<span class="muted">？？</span>';
+  const swap = state.ifHits.filter(h => h.hero === c.ketto && h.stableTo);
+  if (swap.length && state.seenIf) return esc(swap[swap.length - 1].stableTo);
+  return esc(stableOf(c));
+};
 
 /* ---------------------------------------------------------- 计分 / 成绩串 */
 
