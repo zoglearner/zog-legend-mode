@@ -80,6 +80,7 @@ const NODE_META = {
 
 const DB = { manifest: null, dict: null, ifEvents: null };
 const SV = {};                       /* seasonId -> { meta, pool, poolBy, seg, races:{}, segLoaded } */
+const SV_PENDING = {};               /* in-flight 去重：选届预取与「开始选马」前后脚要同一届时只发一份请求 */
 let DATA_V = null;                   /* 数据包版本（manifest.buildId）；所有分档请求带它 ⇒ 换数据即换 URL */
 
 /* manifest 是唯一「必须每次问网」的文件（数据换了只有它不会变 URL，见文件头「缓存」）
@@ -99,14 +100,19 @@ async function jget(rel) {
 
 async function loadSeason(id) {
   if (SV[id]) return SV[id];
-  const [meta, pool, seg] = await Promise.all([
-    jget('seasons/' + id + '/season.json'),
-    jget('seasons/' + id + '/pool.json'),
-    jget('seasons/' + id + '/segments.json')
-  ]);
-  const poolBy = new Map(pool.map(c => [c.ketto, c]));
-  SV[id] = { meta, pool, poolBy, seg, races: {}, segLoaded: 0 };
-  return SV[id];
+  if (SV_PENDING[id]) return SV_PENDING[id];
+  SV_PENDING[id] = (async () => {
+    const [meta, pool, seg] = await Promise.all([
+      jget('seasons/' + id + '/season.json'),
+      jget('seasons/' + id + '/pool.json'),
+      jget('seasons/' + id + '/segments.json')
+    ]);
+    const poolBy = new Map(pool.map(c => [c.ketto, c]));
+    SV[id] = { meta, pool, poolBy, seg, races: {}, segLoaded: 0 };
+    return SV[id];
+  })();
+  try { return await SV_PENDING[id]; }
+  finally { delete SV_PENDING[id]; }   /* 失败也清掉：下一次调用是重试，不是挂死的 promise */
 }
 
 /* 逐场明细按段懒加载（§5.2「没拉过的段在玩家设备上不存在」） */
@@ -1425,7 +1431,18 @@ $('app').addEventListener('click', async e => {
   const start = t.closest('[data-start]');
   if (start) {
     if (!state.pace || !state.season) return;
-    await enterDraft();
+    /* 【2026-09-16】预取没赶上（刚选完届立刻点）/ 缓存被清时，这里要现场下 2 MB ——
+       必须先置灰换文案再 await（同 advance 的三细节），否则按钮毫无动静像点不动。 */
+    start.disabled = true; start.textContent = '正在载入届数据…';
+    try { await enterDraft(); }
+    catch (err) {
+      console.error('[ZOG] 届数据载入失败：', err);
+      openModal('数据载入失败', '<p>届数据包没载入成功，请再点一次「开始选马」重试。</p>');
+    }
+    finally {
+      /* 成功路径整页已重绘、旧按钮脱树，不动；失败路径把按钮还回去让玩家重试 */
+      if (start.isConnected) { start.disabled = false; start.textContent = '开始选马'; }
+    }
     return;
   }
 
@@ -1464,10 +1481,19 @@ $('app').addEventListener('click', async e => {
 
 $('app').addEventListener('change', async e => {
   if (e.target.id === 'selSeason') {
-    if (!e.target.value) return;            /* 占位项：维持置空（2026-09-15） */
+    if (!e.target.value) return;          /* 占位项：维持置空（2026-09-15） */
     state.season = Number(e.target.value);
-    await loadSeason(state.season);          /* 顶栏与届元信息都要读它，必须先载入 */
+    /* 【2026-09-16 修「选届/开始选马反应慢」】届包（season+pool+segments ≈ 2 MB）原先在这一步
+       await 完才 render —— 下拉换好届名后界面干等数秒、按钮迟迟不解禁，玩家以为点不动。
+       其实标题屏（viewTitle/renderTop）只读 manifest，根本不碰届包：
+       先把界面换好，数据放在用户挑推进节奏的空档里后台预取。
+       预取失败静默 —— 真正消费数据的是 enterDraft/btnContinue，那两处 await loadSeason
+       会重试（SV 未命中即重新下载），且有按钮反馈与报错弹窗兜底。 */
     render({});
+    loadSeason(state.season).then(() => {
+      /* 顶栏届名有 SV 守卫（见 renderTop），预取落地前不显示 —— 落地后补一笔 */
+      if (state.screen === 'title') renderTop();
+    }).catch(err => console.error('[ZOG] 届数据预取失败：', err));
   }
 });
 
@@ -1515,6 +1541,10 @@ document.addEventListener('click', async e => {
   if (e.target.id === 'btnContinue') {
     const s = loadSave();
     if (!s) return;
+    /* 【2026-09-16】续档届包多半没在缓存里（本届还没预取过）—— 与「开始选马」同一套反馈 */
+    const btn = e.target.closest('button');
+    if (btn) { btn.disabled = true; btn.textContent = '正在载入届数据…'; }
+    try {
     const batch = s.batch || [];
     Object.assign(state, {
       season: s.season, pace: s.pace, mode: s.mode || 'lite',
@@ -1548,6 +1578,12 @@ document.addEventListener('click', async e => {
       /* 玩家续档时正看着的那张 IF 事件卡不该凭空消失 —— 原地放回去，
          关掉它才定格总分（与 advance() 里终局那一刻的处置完全一致）。 */
       if (state.pendingIf) openModal('IF 世界线 · 本局变动', ifBody());
+    }
+    } catch (err) {
+      console.error('[ZOG] 续档载入失败：', err);
+      openModal('数据载入失败', '<p>届数据包没载入成功，请再点一次「继续存档」重试。</p>');
+    } finally {
+      if (btn && btn.isConnected) { btn.disabled = false; btn.textContent = '继续存档'; }
     }
   }
 });
