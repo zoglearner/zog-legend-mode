@@ -1,1 +1,1 @@
-{"schema":"manifest/v1","generatedAt":"2026-09-15","buildId":"20260915080858","dictVersion":"3d4f81134ae7","dict":"dict.json","seasons":[{"id":2021,"label":"2023-2024","poolSize":5188},{"id":2022,"label":"2024-2025","poolSize":5182}]}
+{"schema":"manifest/v1","generatedAt":"2026-09-15","buildId":"20260915233732","dictVersion":"b636c0248a57","dict":"dict.json","seasons":[{"id":2014,"label":"2016-2017","poolSize":4892},{"id":2018,"label":"2020-2021","poolSize":5014},{"id":2021,"label":"2023-2024","poolSize":5188},{"id":2022,"label":"2024-2025","poolSize":5182}]}

@@ -66,12 +66,24 @@
   table.rows tr:last-child td{border-bottom:none}
   table.rows tr:nth-child(even) td{background:var(--surface-2)}
   table.rows .c-no{font-family:var(--num-font);font-weight:700;width:34px}
-  table.rows .c-score{font-family:var(--num-font);font-weight:700;text-align:right;white-space:nowrap}
+  table.rows .c-score{font-family:var(--num-font);font-weight:700;text-align:right;white-space:nowrap;min-width:112px}
+  /* c-score 里现在排两段数字（+X 与累计分，见 .zinc），112px 保住最宽形（+1,234 12,345）不折行 */
   table.rows .rec{font-family:var(--num-font);letter-spacing:.04em;white-space:nowrap}
   /* 厩舎・馬主（2026-09-11 追加两列）：厩舎（片假名/汉字调教师名）不折行，未披露的「？？」用灰字；
      馬主名可能很长（如 ノルマンディーサラブレッドレーシング），允许折行，免得把整表撑宽 */
   table.rows .c-stab{white-space:nowrap}
   table.rows .c-own{white-space:normal;line-height:1.35}
+  /* 【2026-09-15】転厩/馬主変更角标（名字后的红色 new）与周期得分增量（累计分左侧的红色 +X）：
+     new 做成斜体小上标贴在名字右上；+X 小一号、紧贴累计分左侧。分数列 nowrap 已有，
+     再给 min-width 保住「+增量 累计分」整行不折（2026-09-15 用户裁定：拓宽列宽、分数不换行）。 */
+  table.rows .tagnew{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.04em;
+    color:var(--danger);vertical-align:2px;margin-left:3px;font-style:italic}
+  /* +X 与累计分各占一个**固定最小宽度的右对齐槽**（.zinc / .sctot）：只有 zinc 定宽还不够 ——
+     它的右边缘贴着累计分的左边缘，分数位数不同时 +X 仍跟着浮动（2026-09-15 用户二报「没对齐」）。
+     两个槽都定宽右对齐后，+X 与累计分各自竖成一条整齐的列。无增量行只有 .sctot，仍贴列右缘。 */
+  table.rows .zinc{display:inline-block;min-width:3.6em;text-align:right;
+    font-size:11.5px;font-weight:700;color:var(--danger);margin-right:8px}
+  table.rows .sctot{display:inline-block;min-width:3.4em;text-align:right}
   /* 结算页姓名类列 nowrap 兜底：单列时表格宽 1240px 足够横排；
      即便退到更窄屏、走 .tw 横向滚动，也不让日文长名一字一行竖排。
      【2026-09-13 修「明细表马名折成很多行」】这两条规则**一直只命中了表头** ——
@@ -478,7 +490,7 @@
   .pkfoot .pkpick b{font-family:var(--head-font);color:var(--text)}
   /* 明细表横向滚动容器（见下方 .tw） */
   .tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
-  .tw>table.rows{min-width:650px}   /* 追加厩舎列后，窄屏横向滑动的宽度下限同步抬高 */
+  .tw>table.rows{min-width:720px}   /* 追加厩舎列后抬高；2026-09-15 再抬 70px 给分数列的 +X 增量 */
   .tw-hint{display:none}
   @media(max-width:767px){
     .tw-hint{display:block;font-size:11.5px;color:var(--muted);text-align:center;padding:6px 0 2px}

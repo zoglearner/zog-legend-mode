@@ -161,18 +161,76 @@ const cutNum = ds => Number(String(ds).replace(/\./g, ''));
    等于把（线 B 的）赛果情报白送出去。设计口径为「始终无出赛记录者不揭晓」⇒ 未揭晓态同形。 */
 const ownVisible = (c, k) => c.owner >= 0 && (!!c.revealOwner || (!!c.debut && revealNode(c) <= k));
 const stabVisible = (c, k) => c.stable >= 0 && (!!c.revealStable || (!!c.debut && revealNode(c) <= k));
-const ownCell = (c, k) => ownVisible(c, k) ? esc(ownerOf(c)) : '<span class="muted">？？</span>';
+/* 【2026-09-15】节点快照：厩舎/馬主 = 截至切点（含当日）最后一场出赛时的值 ——
+   逐场 s/o 在 races/s*.json（字典下标，-1＝该场缺值），按已加载段倒序找最近一场，
+   s、o 各自独立回退（某场缺谁再往前找谁）。没有可用逐场值（段未加载 / 未出赛 / 全缺）
+   ⇒ 回退 pool 初值（出道时点，构建期已核与首场逐场值逐字相同，不会「无变化地变了」）。
+   転厩/馬主変更因此在节点推进中表现为列值换新 —— 这是二者在本设计里的唯一暴露载体
+   （比赛表只有骑手，2026-09-11 裁定不动）。选马期（k=0）与候选卡仍用 pool 原值。 */
+function soAt(ket, cut) {
+  const s = S(), lim = cutNum(cut);
+  let sv = -2, ov = -2;                        /* -2 ＝ 尚未找到（区别于 -1＝该场缺值） */
+  for (let i = s.segLoaded - 1; i >= 0 && (sv === -2 || ov === -2); i--) {
+    const blk = s.races[i] && s.races[i][ket];
+    if (!blk) continue;
+    for (let j = blk.length - 1; j >= 0 && (sv === -2 || ov === -2); j--) {
+      const r = blk[j];
+      if (r.d > lim) continue;                 /* 防御：已加载段里晚于切点的行 */
+      if (sv === -2 && r.s >= 0) sv = r.s;
+      if (ov === -2 && r.o >= 0) ov = r.o;
+    }
+  }
+  return [sv, ov];
+}
+/* 【2026-09-15】転厩/馬主変更角标（红色 new）：截至切点（含当日）的**已加载**逐场序列里，
+   厩舎/馬主出现过不止一个值 ⇒ 名字后贴 new。判定刻意用「历史序列 distinct」而非「终值≠初值」：
+   转地方又转回的马终值＝初值、但序列里有异值，这类也要标（2026-09-15 用户裁定）。
+   一旦变过就持续标到终局 —— 玩家视角「这马转过厩」是持久事实，中途撤标反而困惑。
+   逐场段从 nameNode 起才加载：早期节点序列为空 ⇒ 不标，与厩舎列本身的暴露程度同源、不剧透。
+   pool 初值＝出道时点值，且与首场逐场值相同（构建期已核，见 soAt 注释）
+   ⇒ 只数逐场出现过的值即完整，未出道（0 个值）自然不标。 */
+function soChanged(ket, cut, which) {         /* which：0＝厩舎 s、1＝馬主 o */
+  const s = S();
+  if (!s.segLoaded) return false;
+  const lim = cutNum(cut), seen = new Set();
+  for (let i = 0; i < s.segLoaded; i++) {
+    const blk = s.races[i] && s.races[i][ket];
+    if (!blk) continue;
+    for (let j = 0; j < blk.length; j++) {
+      const r = blk[j];
+      if (r.d > lim) continue;                /* 防御：已加载段里晚于切点的行（与 soAt 同口径） */
+      const v = which ? r.o : r.s;
+      if (v >= 0) seen.add(v);
+      if (seen.size > 1) return true;
+    }
+  }
+  return false;
+}
+const NEW_TAG = ' <span class="tagnew">new</span>';
+
+/* tag（第三参）＝ 是否带 new 角标：只有推演页明细表要，结算页最终明细不要
+   （终局定格、玩家全程看过，新旧已是已知信息，2026-09-15 用户裁定）。 */
+const ownCell = (c, k, tag) => {
+  if (!ownVisible(c, k)) return '<span class="muted">？？</span>';
+  const ov = k ? soAt(c.ketto, cutOf(k))[1] : -2;
+  const nm = ov >= 0 ? D().owner[ov] : ownerOf(c);
+  return esc(nm != null ? nm : '—') + (tag && k && soChanged(c.ketto, cutOf(k), 1) ? NEW_TAG : '');
+};
 /* 【2026-09-15】IF 转厩（事件级 stableTo，如 id 09「转入 杉山晴紀 厩」）：命中且已定格
-   ⇒ 厩舎列切到新厩 —— 与 segOf 的段叠加同一兑现时点（state.seenIf），中途节点不剧透。
-   只有明细表两处读方（名单明细 / 最终明细）走 stabCell；候选卡的 stableOf 原值在选马期
-   渲染，IF 尚未掷定，本就不该变。stableTo 写名字（与 rewrite.jockey 同理：手写表不怕
-   字典重建整体位移），构建期 check_if_ops.py 校验其在 dict.stable 内、且与现实厩舎不同；
-   被陷阱移除的马 ifHits 已在源头收走（purgeIfsOfRemoved），此处自动不生效。 */
-const stabCell = (c, k) => {
+   ⇒ 厩舎列切到新厩 —— 与 segOf 的段叠加同一兑现时点（state.seenIf），中途节点不剧透；
+   优先级高于现实転厩快照（IF 兑现后的世界线覆盖现实）。只有明细表两处读方（名单明细 /
+   最终明细）走 stabCell；候选卡的 stableOf 原值在选马期渲染，IF 尚未掷定，本就不该变。
+   stableTo 写名字（与 rewrite.jockey 同理：手写表不怕字典重建整体位移），构建期
+   check_if_ops.py 校验其在 dict.stable 内、且与现实厩舎不同；被陷阱移除的马 ifHits
+   已在源头收走（purgeIfsOfRemoved），此处自动不生效。 */
+const stabCell = (c, k, tag) => {
   if (!stabVisible(c, k)) return '<span class="muted">？？</span>';
   const swap = state.ifHits.filter(h => h.hero === c.ketto && h.stableTo);
-  if (swap.length && state.seenIf) return esc(swap[swap.length - 1].stableTo);
-  return esc(stableOf(c));
+  /* IF 兑现的新厩（构建期校验必与现实厩舎不同）对玩家就是新名字 ⇒ 恒标 new */
+  if (swap.length && state.seenIf) return esc(swap[swap.length - 1].stableTo) + (tag ? NEW_TAG : '');
+  const sv = k ? soAt(c.ketto, cutOf(k))[0] : -2;
+  const nm = sv >= 0 ? D().stable[sv] : stableOf(c);
+  return esc(nm != null ? nm : '—') + (tag && k && soChanged(c.ketto, cutOf(k), 0) ? NEW_TAG : '');
 };
 
 /* ---------------------------------------------------------- 计分 / 成绩串 */
@@ -585,10 +643,12 @@ const PACE_CARD = {
 
 function viewTitle() {
   const list = DB.manifest.seasons;
-  if (!state.season) state.season = list[0].id;
-  const cur = list.find(s => s.id === state.season) || list[0];
+  /* 届次默认置空（2026-09-15 用户口径）：不再静默代选第一届，
+     未选时下拉停在占位项、成绩窗口一行不显示、「开始选马」不可点。 */
+  const cur = list.find(s => s.id === state.season);
 
-  const opts = list.map(s =>
+  const opts = '<option value=""' + (cur ? '' : ' selected') + ' disabled hidden>—— 选择届次 ——</option>' +
+    list.map(s =>
     '<option value="' + s.id + '"' + (s.id === state.season ? ' selected' : '') + '>' +
     '第 ' + s.label + ' 届（' + s.id + ' 年生）</option>').join('');
 
@@ -630,15 +690,17 @@ function viewTitle() {
     '<div class="lbl" style="margin-bottom:8px">② 选择届次</div>' +
     '<div class="selrow">' +
     '<select class="sel" id="selSeason" aria-label="选择届次">' + opts + '</select>' +
-    '<span class="selmeta">成绩窗口 <b class="num">' + esc(cur.label) + '</b>　·　' +
-    '名单 <b>10 匹（5 牡 5 牝）</b></span>' +
+    (cur
+      ? '<span class="selmeta">成绩窗口 <b class="num">' + esc(cur.label) + '</b>　·　' +
+        '名单 <b>10 匹（5 牡 5 牝）</b></span>'
+      : '<span class="selmeta">请先选择届次，再选择推进节奏</span>') +
     '</div>' +
 
     '<div class="lbl" style="margin-bottom:8px">③ 选择推进节奏</div>' +
     '<div class="modebar">' + pcard('half') + pcard('quarter') + '</div>' +
 
     '<div class="titleacts">' +
-    '<button class="btn" data-start="1"' + (state.pace ? '' : ' disabled') + '>开始选马</button>' +
+    '<button class="btn" data-start="1"' + (state.pace && state.season ? '' : ' disabled') + '>开始选马</button>' +
     '<button class="btn ghost" id="btnContinue"' + (save ? '' : ' disabled') + '>继续存档</button>' +
     '</div>' + savetxt +
     '</section>';
@@ -977,8 +1039,8 @@ function simTable() {
   const head = '<tr><th class="c-no" title="纯行号（1–10），非血统番号">No</th>' +
     '<th>马名</th><th>性齢</th><th title="1着-2着-3着-着外；0 场显示 —">成績</th>' +
     '<th>血統</th>' +
-    (showStab ? '<th class="c-stab" title="初厩（入厩当时的厩舎，不随后续転厩变化）">厩舎</th>' : '') +
-    (showOwn ? '<th class="c-own">馬主</th>' : '') +
+    (showStab ? '<th class="c-stab" title="截至本节点最后一场出赛时的厩舎（転厩后换新）">厩舎</th>' : '') +
+    (showOwn ? '<th class="c-own" title="截至本节点最后一场出赛时的馬主（过户/改名后换新）">馬主</th>' : '') +
     '<th class="c-score" title="' + esc(SCORE_TIP) + '" style="text-align:right">' + SCORE_HEAD() + '</th></tr>';
 
   const body = arr.map((r, i) => {
@@ -991,6 +1053,11 @@ function simTable() {
        候选卡与名单行（"牡 2 歳 · 鹿毛"）不在此列 —— 那里没有表头，单位留着才读得懂。 */
     const age = String(k > trapNode() ? 3 : 2);
     const sc = gone ? '—' : scoreAt(r.ket, cut);
+    /* 【2026-09-15】周期增量：本窗（上一节点切点 → 当前切点）新挣的 ZOG 分，红色 +X 贴在累计分左侧。
+       节点 1 不显示 —— 那时累计分本身就是本窗新挣的，+X 是同一数字的复读（2026-09-15 用户裁定）；
+       终局节点含 IF 变动 —— IF 只在终局兑现且计入总分，口径一致。 */
+    const inc = (k > 1 && !gone && typeof sc === 'number')
+      ? sc - scoreAt(r.ket, cutOf(k - 1)) : 0;
     const rec = gone ? '—' : recAt(r.ket, cut);
     const open = !!state.flows[r.ket];
     return '<tr class="mrow' + (open ? ' open' : '') + (gone ? ' void' : '') + ' drop' + (lastFx.table ? ' into' : '') +
@@ -1000,9 +1067,10 @@ function simTable() {
       '<td class="c-age">' + (c.sex === 'M' ? '牡' : '牝') + ' ' + age + '</td>' +
       '<td class="rec">' + rec + '</td>' +
       '<td class="c-ped">' + pedCell(c, k) + '</td>' +
-      (showStab ? '<td class="c-stab">' + stabCell(c, k) + '</td>' : '') +
-      (showOwn ? '<td class="c-own">' + ownCell(c, k) + '</td>' : '') +
-      '<td class="c-score">' + (typeof sc === 'number' ? fmt(sc) : sc) + '</td>' +
+      (showStab ? '<td class="c-stab">' + stabCell(c, k, 1) + '</td>' : '') +
+      (showOwn ? '<td class="c-own">' + ownCell(c, k, 1) + '</td>' : '') +
+      '<td class="c-score">' + (inc > 0 ? '<span class="zinc">+' + fmt(inc) + '</span>' : '') +
+      '<span class="sctot">' + (typeof sc === 'number' ? fmt(sc) : sc) + '</span></td>' +
       '</tr>' +
       (canFlow && !gone ? flowRow(r.ket, cols) : '');
   }).join('');
@@ -1249,7 +1317,7 @@ function viewResult() {
       (showOwn ? '<td class="c-own">' + ownCell(r.c, k) + '</td>' : '') +
       '<td class="c-share"><span class="bar' + (i === 0 ? ' g' : '') + '"><i style="width:' + pct(r.s, total).toFixed(1) + '%"></i></span>' +
       '<span class="sub">' + pct(r.s, total).toFixed(1) + '%</span></td>' +
-      '<td class="c-score">' + fmt(r.s) + '</td></tr>' +
+      '<td class="c-score"><span class="sctot">' + fmt(r.s) + '</span></td></tr>' +
       flowRow(r.ket, cols);
   }).join('');
 
@@ -1356,7 +1424,7 @@ $('app').addEventListener('click', async e => {
 
   const start = t.closest('[data-start]');
   if (start) {
-    if (!state.pace) return;
+    if (!state.pace || !state.season) return;
     await enterDraft();
     return;
   }
@@ -1396,6 +1464,7 @@ $('app').addEventListener('click', async e => {
 
 $('app').addEventListener('change', async e => {
   if (e.target.id === 'selSeason') {
+    if (!e.target.value) return;            /* 占位项：维持置空（2026-09-15） */
     state.season = Number(e.target.value);
     await loadSeason(state.season);          /* 顶栏与届元信息都要读它，必须先载入 */
     render({});
@@ -1593,8 +1662,8 @@ function rulesHtml() {
     DATA_V = man.buildId || man.generatedAt || null;
     const [dict, ife] = await Promise.all([jget('dict.json'), jget('if_events.json')]);
     DB.manifest = man; DB.dict = dict; DB.ifEvents = ife;
-    state.season = man.seasons[0].id;
-    await loadSeason(state.season);
+    /* 届次不预选不预载（2026-09-15）：首页默认置空，数据包改为
+       选届（selSeason change）／开始选马（enterDraft）／继续存档 时各自 loadSeason。 */
     render({ page: true });
   } catch (err) {
     console.error('[ZOG] 数据载入失败：', err);
