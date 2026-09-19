@@ -611,6 +611,10 @@
   .ifcard .ifimplabel{display:block;font-size:10.5px;font-weight:800;letter-spacing:.18em;color:var(--gold)}
   .ifcard .ifscore{font-size:12px;color:var(--muted);padding-top:7px;line-height:1.7}
   .ifcard .ifscore.hot{color:var(--gold);font-weight:700}
+  /* 【2026-09-18】让位行与让位变动（その影響 里发生在别的马身上的部分）：
+     虚线框与主角自己的实底行区分；减分走 danger 色 —— 名单里有这匹马时，这是玩家真正拿走的数字。 */
+  .ifcard .opline.yield{background:transparent;border:1px dashed var(--line)}
+  .ifcard .ifscore.cold{color:var(--danger);font-weight:700}
 
   /* 候选卡里「不可见」的字段（马主 / 厩舎未披露） */
   .kv .v.gone{color:var(--muted);letter-spacing:.12em}

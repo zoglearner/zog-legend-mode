@@ -80,7 +80,6 @@ const NODE_META = {
 
 const DB = { manifest: null, dict: null, ifEvents: null };
 const SV = {};                       /* seasonId -> { meta, pool, poolBy, seg, races:{}, segLoaded } */
-const SV_PENDING = {};               /* in-flight 去重：选届预取与「开始选马」前后脚要同一届时只发一份请求 */
 let DATA_V = null;                   /* 数据包版本（manifest.buildId）；所有分档请求带它 ⇒ 换数据即换 URL */
 
 /* manifest 是唯一「必须每次问网」的文件（数据换了只有它不会变 URL，见文件头「缓存」）
@@ -100,19 +99,14 @@ async function jget(rel) {
 
 async function loadSeason(id) {
   if (SV[id]) return SV[id];
-  if (SV_PENDING[id]) return SV_PENDING[id];
-  SV_PENDING[id] = (async () => {
-    const [meta, pool, seg] = await Promise.all([
-      jget('seasons/' + id + '/season.json'),
-      jget('seasons/' + id + '/pool.json'),
-      jget('seasons/' + id + '/segments.json')
-    ]);
-    const poolBy = new Map(pool.map(c => [c.ketto, c]));
-    SV[id] = { meta, pool, poolBy, seg, races: {}, segLoaded: 0 };
-    return SV[id];
-  })();
-  try { return await SV_PENDING[id]; }
-  finally { delete SV_PENDING[id]; }   /* 失败也清掉：下一次调用是重试，不是挂死的 promise */
+  const [meta, pool, seg] = await Promise.all([
+    jget('seasons/' + id + '/season.json'),
+    jget('seasons/' + id + '/pool.json'),
+    jget('seasons/' + id + '/segments.json')
+  ]);
+  const poolBy = new Map(pool.map(c => [c.ketto, c]));
+  SV[id] = { meta, pool, poolBy, seg, races: {}, segLoaded: 0 };
+  return SV[id];
 }
 
 /* 逐场明细按段懒加载（§5.2「没拉过的段在玩家设备上不存在」） */
@@ -291,11 +285,15 @@ function segCountInto(s, f, nf, sign) {
 /* 一匹马的段真值：命中 IF 且已定格 ⇒ 叠加改写，否则原样返回 */
 function segOf(ketto) {
   const raw = S().seg.seg[ketto] || [];
-  const hits = (state.ifHits || []).filter(h => h.hero === ketto);
+  /* op 归属：主角自己 ＝ 没写 ketto 的 op；写了 ketto 的 op 是「让位」—— 落到被挤名次的同届池马
+     （2026-09-17 用户报「撞名次」：クロワデュノール顶掉マスカレードボール的 JC 2 着后，
+       名单里若同时有マスカレードボール，段真值却还是现实的 2 着 ⇒ 出现两个 2 着）。 */
+  const ops = [];
+  (state.ifHits || []).forEach(ev => ev.rewrite.forEach(op => { if ((op.ketto || ev.hero) === ketto) ops.push({ ev, op }); }));
   /* 未定格 ⇒ 仍是改写前的段真值（§4.8：IF 在终局节点才兑现，先于总分定格爆发） */
-  if (!hits.length || !state.seenIf) return raw;
+  if (!ops.length || !state.seenIf) return raw;
   const out = meta().cuts.map((_, i) => (raw[i] || [0, 0, 0, 0, 0]).slice());
-  for (const ev of hits) for (const op of ev.rewrite) {
+  for (const { ev, op } of ops) {
     const si = segOfDate(op.race[0]);
     if (si < 0 || !out[si]) { console.warn('[IF] 场次落在段网格之外：', ev.name, op.race[0]); continue; }
     const s = out[si];
@@ -415,7 +413,12 @@ function normDate(s) { return Number(String(s).replace(/-/g, '')); }
    明明换了人（戸崎圭太 / Ｃ．デム），比赛表上还是旧骑手。现在 jockey / grade 由事件表写明、这里落地，
    与 f / p 同一套「写明才覆盖」。
    鞍上为什么在数据里写**名字**而不是下标：事件表是手写的、不随数据包重建，而下标会因一次字典重建
-   整体位移 —— 名字写错能被 tools/check_if_ops.py 当场抓住，下标写错只会静默指到另一个人身上。 */
+   整体位移 —— 名字写错能被 tools/check_if_ops.py 当场抓住，下标写错只会静默指到另一个人身上。
+   【2026-09-17 用户报「撞名次」】让位 op：op 级可选字段 ketto ＝ 被主角挤掉名次的同届池马。
+   主角 set W→F（F＜W）时现实中 F..W-1 名的马都要顺位 +1 —— 若其中恰好有本名单里的马，其战绩
+   也得跟着改，否则明细表会出现两个 2 着（クロワデュノール vs マスカレードボール，ジャパンC）。
+   让位 op 只能 set / drop / nf / prize、不能 add（被挤的马本来就在场上），与主角 op 同一触发、
+   同一兑现时点；其 wasFinish / wasPrize 记的是**该马**的现实成绩，同样过校验器。 */
 let jkIndex = null;                          /* dict.json.jockey 的名字 → 下标（全局字典，一局内不变） */
 function jockeyIdx(name) {
   if (!jkIndex) { jkIndex = new Map(); D().jockey.forEach((n, i) => jkIndex.set(n, i)); }
@@ -427,7 +430,8 @@ function jockeyIdx(name) {
 function ifRewrite(ketto) {
   const rows = traceOf(ketto, lastCut()).map(r => ({ ...r }));
   const ops = [];
-  state.ifHits.filter(h => h.hero === ketto).forEach(ev => ev.rewrite.forEach(op => ops.push({ ev, op })));
+  /* 让位 op（op.ketto）与主角自己的 op 同一触发、同一兑现时点：都改这匹马的逐场 */
+  state.ifHits.forEach(ev => ev.rewrite.forEach(op => { if ((op.ketto || ev.hero) === ketto) ops.push({ ev, op }); }));
   for (const item of ops) {
     const op = item.op, d = normDate(op.race[0]), nm = op.race[1];
     const jk = op.jockey ? jockeyIdx(op.jockey) : -1;      /* 没写鞍上 ＝ 这一场不动鞍上 */
@@ -1007,7 +1011,7 @@ function flowRow(ket, colspan) {
   const cut = state.progress ? cutOf(state.progress) : cut0();
   let rows = traceOf(ket, cut);
   let delta = '';
-  const isIf = state.ifHits.some(h => h.hero === ket) && state.progress >= paceLen() && state.seenIf;
+  const isIf = state.ifHits.some(h => h.hero === ket || h.rewrite.some(op => op.ketto === ket)) && state.progress >= paceLen() && state.seenIf;
   if (isIf) { const r = ifResult(ket); rows = r.rows; delta = r.delta; }
 
   if (!rows.length) return '<tr class="frow' + (lastFx.flow === ket ? ' into' : '') + '"><td colspan="' + colspan + '"><div class="racemore">该马在截至本节点的窗口内没有出赛记录。</div></td></tr>';
@@ -1185,6 +1189,20 @@ function trapBody() {
     '每轮从「所属违规集合数最多」的马中移除 ZOG 分最高者，直到合规。</p>' + blocks;
 }
 
+/* 让位 op 的净赏金变动（按马归并），只收「在本局计分名单里」的马：
+   不在名单里的让位马，其让位是世界线背景、不进玩家账本；被那一刀移除的马同理（不计分）。
+   「その影響」的让位减分行（ifBody）与结算页的「IF 变动净增」（viewResult）读的都是这一份 ——
+   两处必须给出同一个数。 */
+function yieldDeltas(ev) {
+  const gone = new Set((state.trapRemoved || []).map(r => r.ketto));
+  const d = {};
+  ev.rewrite.forEach(op => {
+    if (op.ketto && state.roster.includes(op.ketto) && !gone.has(op.ketto))
+      d[op.ketto] = (d[op.ketto] || 0) + (op.prize || 0) - (op.wasPrize || 0);
+  });
+  return d;
+}
+
 function ifBody() {
   const evs = state.ifHits;
   if (!evs.length) return '<p><b>这一届风平浪静</b> —— 名单里的马都按原本的路走了下去。</p>';
@@ -1201,7 +1219,11 @@ function ifBody() {
       else if (op.op === 'add') shot = '第 ' + op.finish + ' 着（赏金 ' + fmt(op.prize) + ' 万）';
       else if (op.op === 'drop') shot = '原第 ' + op.wasFinish + ' 着（赏金 ' + fmt(op.wasPrize) + ' 万）不再计入';
       else if (op.op === 'nf') shot = '原第 ' + op.wasFinish + ' 着 → ' + NF[op.nf];
-      return '<div class="opline"><b>' + d + ' ' + esc(nm) + '</b>　' + shot + '</div>';
+      /* 【2026-09-18】让位 op 写的是别的马（op.ketto）：行上带马名，不标就成了主角名下的无名改写。
+         马名走 <i>（金字）—— 与「明细行只陈述事实」同一口径，说的是"这一场里这匹马怎么了"。 */
+      const yc = op.ketto ? byKet(op.ketto) : null;
+      const who = op.ketto ? '<i>' + esc(yc ? yc.name : '？？') + '</i>　' : '';
+      return '<div class="opline' + (op.ketto ? ' yield' : '') + '"><b>' + d + ' ' + esc(nm) + '</b>　' + who + shot + '</div>';
     }).join('');
     /* 【2026-09-13】明细与分数收在「その影響」标头下（原先明细归明细、末尾另挂一行「影响分数：有／无」）。
        没有分数时**不写任何东西**：原来的「ZOG 分不变 —— 落在赏金区外，成绩串会变」
@@ -1211,13 +1233,23 @@ function ifBody() {
       ? '<div class="ifscore hot">✦ 赏金 ' + (ev.delta >= 0 ? '＋' : '−') + fmt(Math.abs(ev.delta)) +
         ' 万（ZOG ' + (ev.delta >= 0 ? '＋' : '−') + fmt(Math.abs(ev.delta)) + ' 分）</div>'
       : '';
+    /* 【2026-09-18 用户报「その影響 也要标」】让位马若同时在玩家名单里，它让位后的变动是玩家
+       真正拿走的数字 —— 不逐马标出来，玩家就是"莫名其妙少分"。逐马一行，减分走 danger 色；
+       涨分（主角撤出／名次下沉时，后面的马整体上移）才有的情形，与主角同一金色。 */
+    const yd = yieldDeltas(ev);
+    const yscore = Object.keys(yd).filter(k => yd[k]).map(k => {
+      const c = byKet(k);
+      return '<div class="ifscore ' + (yd[k] > 0 ? 'hot' : 'cold') + '">✦ ' + esc(c ? c.name : '？？') +
+        '　赏金 ' + (yd[k] >= 0 ? '＋' : '−') + fmt(Math.abs(yd[k])) +
+        ' 万（ZOG ' + (yd[k] >= 0 ? '＋' : '−') + fmt(Math.abs(yd[k])) + ' 分）</div>';
+    }).join('');
     /* 只渲染玩家该看的：马名 ＋ 正文 ＋ 「その影響」块。
        刻意不渲染 trigger.desc（幕后触发设定）与 spill（对其他马的核算记录）——
        两者都是构建期的设计备注，带「（非本届，忽略）」这类内部括注，摊到玩家面前直接出戏（2026-09-13 用户报）。 */
     return '<div class="ifcard"><span class="iftag">IF</span>' +
       '<h4>' + esc(ev.name) + '</h4>' +
       '<p class="hi">' + esc(ev.text) + '</p>' +
-      '<div class="ifimpact"><span class="ifimplabel">その影響</span>' + ops + score + '</div>' +
+      '<div class="ifimpact"><span class="ifimplabel">その影響</span>' + ops + score + yscore + '</div>' +
       '</div>';
   }).join('');
   /* 【2026-09-13】原先这里有一段总起：「被点名的名马撬动了历史 —— 改写写进赛果，
@@ -1342,7 +1374,10 @@ function viewResult() {
       '<div style="padding:12px">' + ifBody() + '</div></div>'
     : '';
 
-  const sum = state.ifHits.reduce((a, e) => a + (e.scoreImpact ? e.delta : 0), 0);
+  /* 【2026-09-18】净增要把让位马的变动一并收进来 —— 否则玩家名单里有让位马时，
+     这里的「净增」与实际总分对不上（主角 +12,500、让位马 −8,000，净增只有 +4,500）。 */
+  const sum = state.ifHits.reduce((a, e) => a + (e.scoreImpact ? e.delta : 0), 0) +
+    state.ifHits.reduce((a, e) => a + Object.values(yieldDeltas(e)).reduce((x, y) => x + y, 0), 0);
 
   return '' +
     '<section class="screen on' + (lastFx.page ? ' into' : '') + '">' +
@@ -1431,18 +1466,7 @@ $('app').addEventListener('click', async e => {
   const start = t.closest('[data-start]');
   if (start) {
     if (!state.pace || !state.season) return;
-    /* 【2026-09-16】预取没赶上（刚选完届立刻点）/ 缓存被清时，这里要现场下 2 MB ——
-       必须先置灰换文案再 await（同 advance 的三细节），否则按钮毫无动静像点不动。 */
-    start.disabled = true; start.textContent = '正在载入届数据…';
-    try { await enterDraft(); }
-    catch (err) {
-      console.error('[ZOG] 届数据载入失败：', err);
-      openModal('数据载入失败', '<p>届数据包没载入成功，请再点一次「开始选马」重试。</p>');
-    }
-    finally {
-      /* 成功路径整页已重绘、旧按钮脱树，不动；失败路径把按钮还回去让玩家重试 */
-      if (start.isConnected) { start.disabled = false; start.textContent = '开始选马'; }
-    }
+    await enterDraft();
     return;
   }
 
@@ -1481,19 +1505,10 @@ $('app').addEventListener('click', async e => {
 
 $('app').addEventListener('change', async e => {
   if (e.target.id === 'selSeason') {
-    if (!e.target.value) return;          /* 占位项：维持置空（2026-09-15） */
+    if (!e.target.value) return;            /* 占位项：维持置空（2026-09-15） */
     state.season = Number(e.target.value);
-    /* 【2026-09-16 修「选届/开始选马反应慢」】届包（season+pool+segments ≈ 2 MB）原先在这一步
-       await 完才 render —— 下拉换好届名后界面干等数秒、按钮迟迟不解禁，玩家以为点不动。
-       其实标题屏（viewTitle/renderTop）只读 manifest，根本不碰届包：
-       先把界面换好，数据放在用户挑推进节奏的空档里后台预取。
-       预取失败静默 —— 真正消费数据的是 enterDraft/btnContinue，那两处 await loadSeason
-       会重试（SV 未命中即重新下载），且有按钮反馈与报错弹窗兜底。 */
+    await loadSeason(state.season);          /* 顶栏与届元信息都要读它，必须先载入 */
     render({});
-    loadSeason(state.season).then(() => {
-      /* 顶栏届名有 SV 守卫（见 renderTop），预取落地前不显示 —— 落地后补一笔 */
-      if (state.screen === 'title') renderTop();
-    }).catch(err => console.error('[ZOG] 届数据预取失败：', err));
   }
 });
 
@@ -1541,10 +1556,6 @@ document.addEventListener('click', async e => {
   if (e.target.id === 'btnContinue') {
     const s = loadSave();
     if (!s) return;
-    /* 【2026-09-16】续档届包多半没在缓存里（本届还没预取过）—— 与「开始选马」同一套反馈 */
-    const btn = e.target.closest('button');
-    if (btn) { btn.disabled = true; btn.textContent = '正在载入届数据…'; }
-    try {
     const batch = s.batch || [];
     Object.assign(state, {
       season: s.season, pace: s.pace, mode: s.mode || 'lite',
@@ -1578,12 +1589,6 @@ document.addEventListener('click', async e => {
       /* 玩家续档时正看着的那张 IF 事件卡不该凭空消失 —— 原地放回去，
          关掉它才定格总分（与 advance() 里终局那一刻的处置完全一致）。 */
       if (state.pendingIf) openModal('IF 世界线 · 本局变动', ifBody());
-    }
-    } catch (err) {
-      console.error('[ZOG] 续档载入失败：', err);
-      openModal('数据载入失败', '<p>届数据包没载入成功，请再点一次「继续存档」重试。</p>');
-    } finally {
-      if (btn && btn.isConnected) { btn.disabled = false; btn.textContent = '继续存档'; }
     }
   }
 });
@@ -1686,6 +1691,8 @@ function rulesHtml() {
     '而不是在原分数上另行加减。</li>' +
     '<li>多数变动落在赏金区外：<b>成绩串会变，总分未必变</b>。变动在终局结算时发生，' +
     '总分须待事件卡关闭后才定格。</li>' +
+    '<li>名次被顶掉的马一并让位 —— 若名单里同时有它，按让位后的名次计分，' +
+    '变动同样写在事件卡的「その影響」里。</li>' +
     '</ul>';
 }
 
