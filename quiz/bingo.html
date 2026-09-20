@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>赛马 BINGO</title>
+<!--
+  赛马 Bingo
+  ─────────
+  棋盘 4×4 = 16 格，每格一个「单条件」（父馬 = X / 赢过有馬記念 / 芦毛 / 栗東所属 …）。
+  牌堆一匹匹发：放进「它满足的任意空格」，想不起来就跳过（跳过的攒到下一轮再发）。
+  16 格填满即 BINGO；不限时、不计分，只记「误放次数」和「用了几轮」。
+
+  数据（纯静态，fetch 即可）
+    ../assets/data/bingo/cards.json  卡池 {conds:[{t,v}], n:文案, w:池内占比, fk:够有名候选数, h:[马ID]}
+    ../assets/data/bingo/names.json  {n:[日文名], e:[英文名], f:[名气]}（下标即马 ID）
+
+  组盘（全在浏览器）
+    ① 抽 9 种类型 → 凑 16 张卡（同类型 ≤3；占比 >35% 的宽卡最多 2 张）
+    ② **每格在牌堆里至少保底 MIN_PER 张候选** —— 这才是"填得满"的关键，比牌堆总数重要
+    ③ 先给每格一匹不重复的"业主马" ⇒ 天然存在完美匹配；再补候选 + 几张干扰 ⇒ 牌堆约 40 张
+    ④ 洗牌后一匹匹发
+  认得度：每张卡的 h 在生成端按名气降序；挑马时优先名气 ≥ GOOD 的
+         ⇒ NM.f（名气）**只在内部用来挑马，从不显示给玩家**
+-->
+<style>
+  :root{
+    --cream:#fff5e4; --paper:#fffdf8; --ink:#2c2118; --muted:#9b8a74; --line:#ecdfc9;
+    --red:#e33d3d; --gold:#f0ac1e; --blue:#2f6fdb; --green:#22a35e; --purple:#8b5cf6; --pink:#e8558b;
+    --shadow:0 6px 0 rgba(44,33,24,.10), 0 12px 26px rgba(44,33,24,.13);
+    --serif:"Songti SC","SimSun",Georgia,"Times New Roman",serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;color:var(--ink);min-height:100vh;font-size:15px;line-height:1.6;
+       font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+       background:var(--cream);
+       background-image:radial-gradient(rgba(227,61,61,.07) 2px,transparent 2px),
+                        radial-gradient(rgba(47,111,219,.06) 2px,transparent 2px);
+       background-size:34px 34px,34px 34px;background-position:0 0,17px 17px}
+  .wrap{max-width:960px;margin:0 auto;padding:20px 16px 70px}
+  .back{display:inline-block;font-size:12.5px;color:var(--muted);text-decoration:none;margin-bottom:12px;letter-spacing:.04em}
+  .back:hover{color:var(--red)}
+
+  h1{text-align:center;margin:4px 0 2px;font-family:var(--serif);font-size:30px;letter-spacing:.1em;
+     display:flex;align-items:center;justify-content:center;gap:9px;flex-wrap:wrap}
+  h1 .cn{color:var(--ink)}
+  .bl{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:50%;
+      color:#fff;font-family:var(--mono);font-size:21px;font-weight:700;box-shadow:0 3px 0 rgba(0,0,0,.16)}
+  .bl.b{background:var(--blue)} .bl.i{background:var(--red)} .bl.n{background:var(--purple)}
+  .bl.g{background:var(--green)} .bl.o{background:var(--gold)}
+  .sub{text-align:center;color:var(--muted);font-size:13px;margin:6px 0 16px}
+
+  /* ---- 当前这匹：摇出来的球 ---- */
+  .ball{width:186px;height:186px;border-radius:50%;margin:2px auto 12px;position:relative;
+        background:radial-gradient(circle at 33% 27%,#ffffff 0%,var(--bc1) 42%,var(--bc2) 100%);
+        box-shadow:0 10px 0 rgba(44,33,24,.10),0 16px 30px rgba(44,33,24,.18);display:flex;align-items:center;justify-content:center}
+  .ball::after{content:"";position:absolute;top:16px;left:30px;width:34px;height:22px;border-radius:50%;
+        background:rgba(255,255,255,.62);transform:rotate(-24deg);filter:blur(1px)}
+  .ball .inner{width:74%;height:74%;border-radius:50%;background:rgba(255,255,255,.95);
+        display:flex;flex-direction:column;align-items:center;justify-content:center;
+        text-align:center;padding:8px;box-shadow:inset 0 0 12px rgba(44,33,24,.07)}
+  .ball .no{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.1em}
+  .ball .nm{font-size:17px;font-weight:700;line-height:1.25;word-break:break-all;margin:2px 0}
+  .ball .nm.long{font-size:14px}
+  .ball .en{font-size:11px;color:var(--muted);line-height:1.2;word-break:break-word}
+  .ball.B{--bc1:#5b93ea;--bc2:#1f4fae} .ball.I{--bc1:#ef6a6a;--bc2:#b32323}
+  .ball.N{--bc1:#a98bfa;--bc2:#5b32c9} .ball.G{--bc1:#4fc182;--bc2:#177a44}
+  .ball.O{--bc1:#f6c64f;--bc2:#c07f08}
+  .ball.shake{animation:sh .36s}
+  @keyframes sh{0%,100%{transform:translateX(0)}20%{transform:translateX(-9px)}40%{transform:translateX(8px)}
+                60%{transform:translateX(-6px)}80%{transform:translateX(4px)}}
+  .ball.pop{animation:pp .26s ease-out}
+  @keyframes pp{0%{transform:scale(.82)}70%{transform:scale(1.04)}100%{transform:scale(1)}}
+
+  /* ---- 棋盘 ---- */
+  .board{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:4px}
+  @media(max-width:620px){.board{grid-template-columns:repeat(2,1fr);gap:8px}}
+  .cell{position:relative;min-height:92px;padding:15px 9px 10px;border:2px solid var(--line);border-radius:12px;
+        background:var(--paper);color:var(--ink);font:inherit;text-align:center;cursor:pointer;overflow:hidden;
+        display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+        box-shadow:0 4px 0 rgba(44,33,24,.08);transition:transform .09s,box-shadow .12s,border-color .12s}
+  .cell::before{content:"";position:absolute;top:0;left:0;right:0;height:5px;background:var(--c)}
+  .cell:hover:not(.done){transform:translateY(-3px);box-shadow:0 7px 0 rgba(44,33,24,.10);border-color:var(--c)}
+  .cell .num{position:absolute;top:8px;left:9px;font-family:var(--mono);font-size:10.5px;font-weight:700;
+        color:#fff;background:var(--c);border-radius:99px;padding:0 6px;line-height:15px}
+  .cell .cond{font-size:12.5px;line-height:1.42;word-break:break-word;padding:0 2px}
+  .cell.done{border-color:var(--c);background:#fffaf0;cursor:default}
+  .cell .cond2{font-size:10px;color:var(--muted);text-decoration:line-through;opacity:.8;
+        line-height:1.3;word-break:break-word;padding:0 2px}
+  .cell .who{font-size:13px;font-weight:700;color:var(--c);line-height:1.32;word-break:break-all}
+  .cell .en2{font-size:10px;color:var(--muted);line-height:1.2;word-break:break-word}
+  .cell .stamp{position:absolute;top:5px;right:6px;width:22px;height:22px;border-radius:50%;background:var(--c);
+        color:#fff;font-size:13px;display:flex;align-items:center;justify-content:center;font-weight:700}
+  .cell.just .stamp{animation:st .42s cubic-bezier(.2,1.5,.4,1)}
+  @keyframes st{0%{transform:scale(2.4);opacity:0}60%{opacity:1}100%{transform:scale(1)}}
+  .cell.no{animation:sh .36s;border-color:var(--red)}
+  .cell.c0{--c:var(--blue)} .cell.c1{--c:var(--red)} .cell.c2{--c:var(--purple)}
+  .cell.c3{--c:var(--green)} .cell.c4{--c:var(--gold)}
+
+  .actions{margin-top:16px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+  .actions.right{justify-content:flex-end;margin-top:12px}
+  button.b{font:inherit;font-size:14px;font-weight:700;padding:10px 26px;border-radius:99px;cursor:pointer;
+        border:2px solid var(--line);background:var(--paper);color:var(--ink);box-shadow:0 4px 0 rgba(44,33,24,.10)}
+  button.b:hover{transform:translateY(-1px)}
+  button.b:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(44,33,24,.10)}
+  button.b.skip{border-color:var(--blue);color:var(--blue)}
+  button.b.pri{background:var(--red);border-color:var(--red);color:#fff;box-shadow:0 4px 0 #a82424}
+  button.b.pri2{background:var(--gold);border-color:var(--gold);color:#3a2a06;box-shadow:0 4px 0 #b57d09}
+  .msg{text-align:center;font-size:13.5px;color:var(--muted);min-height:22px;margin-top:12px}
+  .msg.no{color:var(--red);font-weight:700}
+
+  /* ---- 结算 ---- */
+  .over{text-align:center;padding:10px 10px 4px}
+  .over .hd{display:flex;justify-content:center;gap:6px;margin-bottom:8px}
+  .over .hd span{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:50%;
+        color:#fff;font-family:var(--mono);font-size:22px;font-weight:700;animation:bj .7s ease-out both}
+  .over .hd span:nth-child(1){background:var(--blue);animation-delay:0s}
+  .over .hd span:nth-child(2){background:var(--red);animation-delay:.08s}
+  .over .hd span:nth-child(3){background:var(--purple);animation-delay:.16s}
+  .over .hd span:nth-child(4){background:var(--green);animation-delay:.24s}
+  .over .hd span:nth-child(5){background:var(--gold);animation-delay:.32s}
+  @keyframes bj{0%{transform:translateY(-26px) scale(.6);opacity:0}60%{transform:translateY(4px) scale(1.1)}100%{transform:none;opacity:1}}
+  .over .big{font-family:var(--serif);font-size:52px;letter-spacing:.04em;color:var(--red);line-height:1.05}
+  .over .big small{font-size:20px;color:var(--muted)}
+  .over .tx{font-size:15px;font-weight:700;margin:10px 0 4px}
+  .over .sub2{font-size:12.5px;color:var(--muted);margin-bottom:20px}
+
+  /* ---- 撒花 ---- */
+  #confetti{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:9}
+  #confetti i{position:absolute;top:-14px;width:9px;height:14px;border-radius:2px;opacity:.95;
+        animation:fall linear forwards}
+  @keyframes fall{to{transform:translateY(105vh) rotate(720deg);opacity:.9}}
+</style>
+</head>
+<body>
+<div id="confetti"></div>
+<div class="wrap">
+  <a class="back" href="../">← 返回首页</a>
+  <h1><span class="cn">赛马</span><span class="bl b">B</span><span class="bl i">I</span><span class="bl n">N</span><span class="bl g">G</span><span class="bl o">O</span></h1>
+  <p class="sub">摇出一匹马 —— 把它放进它满足的那一格</p>
+
+  <div id="play" hidden>
+    <div class="ball B" id="ball">
+      <div class="inner">
+        <div class="no" id="curNo">—</div>
+        <div class="nm" id="curNm"></div>
+        <div class="en" id="curEn"></div>
+      </div>
+    </div>
+
+    <div class="actions right">
+      <button class="b skip" id="bSkip">跳过</button>
+    </div>
+    <div class="msg" id="msg"></div>
+
+    <div class="board" id="board"></div>
+  </div>
+
+  <div id="over" hidden>
+    <div class="over">
+      <div class="hd" id="hd" hidden><span>B</span><span>I</span><span>N</span><span>G</span><span>O</span></div>
+      <div class="big"><span id="ovScore">0</span><small> / 16</small></div>
+      <div class="tx" id="ovTx"></div>
+      <div class="sub2" id="ovSub"></div>
+      <div class="actions">
+        <button class="b pri" id="bAgain">同盘再来</button>
+        <button class="b pri2" id="bNew">换一盘</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* FAMOUS_*  ：每张卡的 h 在生成端已按名气降序 —— 只从前面一段里抽马
+   MIN_FK    ：组盘时优先选「卡里够有名的候选 ≥ 这么多匹」的卡
+   GOOD      ：单匹马的"够有名"门槛（名气 = 3×G1胜 + 重赏胜；≥3 ≈ 赢过 G1 或赢过 3 场重赏）
+   MIN_PER   ：**每一格在牌堆里至少要有几张候选**（这是"填得满"的关键，比牌堆总数重要）
+   SLACK     ：补完保底后再多发的纯干扰牌 */
+const SLOTS = 16, WIDE = 0.35, MAX_WIDE = 2, MAX_SAME_TYPE = 3, TYPE_N = 9;
+const FAMOUS_OWN = 12, FAMOUS_EXTRA = 24, MIN_FK = 6, GOOD = 3, MIN_PER = 3, SLACK = 8;
+const BALLS = ['B', 'I', 'N', 'G', 'O'];
+
+let CARDS = [], NM = { n: [], e: [], f: [] };
+let board = [], deck = [], at = 0, skipped = [], roundNo = 1;
+let filled = 0, wrong = 0, cur = null, done = false;
+
+const el = id => document.getElementById(id);
+const ri = n => Math.random() * n | 0;
+const pick = a => a[ri(a.length)];
+const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--){ const j = ri(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+/* ---------- 组盘 ---------- */
+function pickCards(){
+  const byType = {};
+  for (const c of CARDS) (byType[c.conds[0].t] || (byType[c.conds[0].t] = [])).push(c);
+  const allTypes = Object.keys(byType);
+  for (let attempt = 0; attempt < 300; attempt++){
+    const types = shuffle(allTypes).slice(0, Math.min(TYPE_N, allTypes.length));
+    const sel = [], used = new Set(), cnt = {}, w = { n: 0 };
+    for (let round = 0; round < 6 && sel.length < SLOTS; round++){
+      for (const t of shuffle(types)){
+        if (sel.length >= SLOTS) break;
+        if ((cnt[t] || 0) >= MAX_SAME_TYPE) continue;
+        const pool = byType[t].filter(c => !used.has(c) && !(c.w > WIDE && w.n >= MAX_WIDE));
+        if (!pool.length) continue;
+        const good = pool.filter(c => (c.fk || 0) >= MIN_FK);   // 优先「卡里够有名的候选多」的
+        const c = pick(good.length ? good : pool);              // 宽卡（栗東 / 鹿毛 / 東京赢过…）限额 2 张
+        if (c.w > WIDE) w.n++;
+        used.add(c); cnt[t] = (cnt[t] || 0) + 1; sel.push(c);
+      }
+    }
+    if (sel.length === SLOTS) return sel;
+  }
+  return null;
+}
+
+/* 组牌堆：核心不是"发多少张"，而是**每一格在牌堆里至少有 MIN_PER 张候选**。
+   否则某格只有 1 张候选、玩家又把它放到别处，那格就永远填不上了。 */
+function buildDeck(){
+  const used = new Set(), pool = [];
+  const cand = board.map(() => 0);
+  const take = (b, k) => {
+    const top = b.list.slice(0, Math.min(b.list.length, k));
+    let x = null;
+    // 先挑「够有名」的（NM.f 只在内部用来挑马，**从不显示给玩家**），没有再放宽
+    for (const y of shuffle(top)){ if (!used.has(y) && (NM.f[y] || 0) >= GOOD){ x = y; break; } }
+    if (x == null) for (const y of shuffle(top)){ if (!used.has(y)){ x = y; break; } }
+    if (x == null) for (const y of b.list){ if (!used.has(y)){ x = y; break; } }
+    return x;
+  };
+  const put = x => {
+    used.add(x); pool.push(x);
+    board.forEach((b, j) => { if (b.set.has(x)) cand[j]++; });
+  };
+  for (const b of board) put(take(b, FAMOUS_OWN));            // ① 每格一匹业主马（保证有完美匹配）
+  let guard = 0;                                              // ② 把每格候选补到 MIN_PER 张
+  while (guard++ < 6000){
+    const lack = board.map((_, i) => i).filter(i => cand[i] < MIN_PER);
+    if (!lack.length) break;
+    const x = take(board[pick(lack)], FAMOUS_EXTRA);
+    if (x == null) break;
+    put(x);
+  }
+  for (let i = 0; i < SLACK; i++){                            // ③ 再加几张纯干扰，多留回头路
+    const x = take(pick(board), FAMOUS_EXTRA);
+    if (x == null) break;
+    put(x);
+  }
+  deck = shuffle(pool);
+}
+
+function start(fresh){
+  if (fresh){
+    const sel = pickCards();
+    if (!sel){ el('msg').textContent = '组盘失败，刷新重试'; return; }
+    board = sel.map(c => ({ n: c.n, list: c.h, set: new Set(c.h), who: null }));
+  } else {
+    board.forEach(b => { b.who = null; });
+  }
+  buildDeck();
+  at = 0; skipped = []; roundNo = 1;
+  filled = 0; wrong = 0; done = false; cur = null;
+  el('over').hidden = true; el('play').hidden = false;
+  el('hd').hidden = true; el('confetti').innerHTML = '';
+  el('msg').textContent = ''; el('msg').className = 'msg';
+  renderBoard(); nextCard();
+}
+
+/* ---------- 渲染 ---------- */
+function cellHtml(b, i, just){
+  const col = ' c' + (i % 5);
+  if (b.who != null){
+    return '<button class="cell' + col + ' done' + (just ? ' just' : '') + '" data-i="' + i + '">' +
+      '<span class="num">' + (i + 1) + '</span><span class="stamp">✓</span>' +
+      '<span class="cond2">' + b.n + '</span>' +
+      '<span class="who">' + NM.n[b.who] + '</span>' +
+      (NM.e[b.who] ? '<span class="en2">' + NM.e[b.who] + '</span>' : '') +
+      '</button>';
+  }
+  return '<button class="cell' + col + '" data-i="' + i + '">' +
+    '<span class="num">' + (i + 1) + '</span><span class="cond">' + b.n + '</span></button>';
+}
+
+function renderBoard(){
+  el('board').innerHTML = board.map((b, i) => cellHtml(b, i, false)).join('');
+}
+function nextCard(){
+  if (done) return;
+  if (filled >= SLOTS) return finish(true);
+  if (at >= deck.length) return endRound();
+  cur = deck[at++];
+  const nm = NM.n[cur] || ('#' + cur);
+  el('msg').textContent = ''; el('msg').className = 'msg';    // 换牌时清掉上一次的提示
+  el('curNm').textContent = nm;
+  el('curNm').className = 'nm' + (nm.length > 8 ? ' long' : '');
+  el('curEn').textContent = NM.e[cur] || '';
+  el('curNo').textContent = '#' + String(at).padStart(2, '0');
+  const ball = el('ball');
+  ball.className = 'ball ' + BALLS[ri(5)];
+  void ball.offsetWidth; ball.classList.add('pop');
+}
+
+function bump(cls){
+  const b = el('ball');
+  b.classList.remove('shake', 'pop'); void b.offsetWidth; b.classList.add(cls);
+}
+
+/* ---------- 轮次 ---------- */
+/* 一轮发完：跳过的牌**不丢**，攒成下一轮再摇一遍（上一轮见过面，这轮往往就想起来了）。
+   理论上可以一直摇到填满 —— 只有真正死局（某空格在剩下的牌里一个候选都没有）才结算。 */
+function endRound(){
+  if (filled >= SLOTS) return finish(true);
+  if (!skipped.length) return finish(false);
+  const dead = board.filter(b => b.who == null && !skipped.some(h => b.set.has(h))).length;
+  if (dead){
+    el('msg').className = 'msg no';
+    el('msg').textContent = '有 ' + dead + ' 格在剩下的牌里没有候选了 —— 结算';
+    return finish(false);
+  }
+  const n = skipped.length;
+  deck = shuffle(skipped); skipped = []; at = 0; roundNo++;
+  nextCard();
+  el('msg').className = 'msg';
+  el('msg').textContent = '第 ' + (roundNo - 1) + ' 轮结束 —— 跳过的 ' + n + ' 匹重新摇一轮';
+}
+
+/* ---------- 交互 ---------- */
+el('board').addEventListener('click', e => {
+  const cell = e.target.closest('.cell'); if (!cell || done) return;
+  const i = +cell.dataset.i, b = board[i];
+  if (b.who != null) return;                                  // 已填的格不能再放
+  if (b.set.has(cur)){                                        // 合法 → 放入
+    b.who = cur; filled++;
+    cell.outerHTML = cellHtml(b, i, true);
+    bump('pop');
+    el('msg').className = 'msg';
+    el('msg').textContent = '';
+    setTimeout(nextCard, 200);
+  } else {                                                    // 不合法 → 抖动 + 记误放
+    wrong++;
+    cell.className = cell.className.replace(' no', '') + ' no';
+    setTimeout(() => { cell.className = cell.className.replace(' no', ''); }, 380);
+    el('msg').className = 'msg no';
+    el('msg').textContent = '「' + (NM.n[cur] || '') + '」不符合这一格';
+  }
+});
+
+el('bSkip').onclick = () => {
+  if (done) return;
+  skipped.push(cur);                                          // 攒起来，下一轮还会摇到它
+  nextCard();
+};
+
+function confetti(n){
+  const box = el('confetti'), cols = ['#e33d3d', '#f0ac1e', '#2f6fdb', '#22a35e', '#8b5cf6', '#e8558b'];
+  let html = '';
+  for (let i = 0; i < n; i++){
+    html += '<i style="left:' + (Math.random() * 100).toFixed(1) + '%;background:' + pick(cols) +
+      ';animation-duration:' + (1.6 + Math.random() * 1.6).toFixed(2) + 's;animation-delay:' +
+      (Math.random() * .7).toFixed(2) + 's"></i>';
+  }
+  box.innerHTML = html;
+  setTimeout(() => { box.innerHTML = ''; }, 4200);
+}
+
+function finish(win){
+  done = true;
+  el('play').hidden = true; el('over').hidden = false;
+  el('ovScore').textContent = filled;
+  el('ovTx').textContent = win ? '全部填满 —— BINGO！'
+    : filled >= 12 ? '差一点就满了'
+    : filled >= 8  ? '还不错，再摇一盘'
+    : '这盘有点难，换一盘试试';
+  el('ovSub').textContent = '用了 ' + roundNo + ' 轮 ｜ 误放 ' + wrong + ' 次';
+  el('hd').hidden = !win;
+  if (win) confetti(70);
+}
+
+el('bAgain').onclick = () => start(false);     // 同一张盘重玩（换副牌）
+el('bNew').onclick = () => start(true);        // 重新组格
+
+fetch('../assets/data/bingo/cards.json')
+  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+  .then(async d => {
+    CARDS = d.cards || [];
+    NM = await fetch('../assets/data/bingo/names.json').then(r => r.json());
+    if (!CARDS.length) throw new Error('empty');
+    start(true);
+  })
+  .catch(() => {
+    el('play').hidden = false;
+    el('board').innerHTML = ''; el('ball').hidden = true;
+    el('msg').className = 'msg no';
+    el('msg').textContent = '卡片池加载失败 —— 请通过 HTTP 打开本页（浏览器禁止 file:// 读数据）。';
+  });
+</script>
+</body>
+</html>

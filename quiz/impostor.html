@@ -4,6 +4,22 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>找内鬼 · 赛马小游戏</title>
+<!--
+  找内鬼 · 难度模型（三档）
+    每题一个难度分 D0（0–100，生成器算好存在 d 字段）：
+        D0 = 30×认得度 + 25×关系基分 + 25×混入度 + 20×年代 − 8×冠名
+        认得度 = 10 匹平均名气(3×G1胜+重赏胜) 越低越难
+        年代   = 10 匹平均出生年越早越难（池 1979–2024）
+        混入度 = 内鬼是否落在 9 匹的年代区间内（越贴合越难）
+    四档（题库 = 常规池 ＋ 易池「名马优先」＋ 超易池「名马且全员 2000 年后生」）：
+        L0 入门 = D0 0–32（均 21.0，名气 11.2、出生年 2010）＋ **透露**
+        L1 进阶 = D0 32–48（均 41.8，名气 5.2）            ＋ **透露**
+        L2 困难 = D0 48–68（均 57.0，名气 3.6），不透
+        L3 地狱 = D0 ≥ 68（均 74.5，名气 2.7），不透
+    新增维度「赢过同一场重赏」：9 匹都赢过同一场重赏（如東京優駿），内鬼没赢过。
+        G1 赛事基分 12（好认）⇒ 中位 33.6，只进 入门 / 进阶
+        G2/G3 基分 26（偏门）⇒ 中位 62.5，只进 困难 / 地狱
+-->
 <style>
   :root{
     --bg:#11181c; --panel:#182226; --paper:#f3ead7; --paper2:#e9dfca; --ink:#2a2620;
@@ -24,11 +40,25 @@
   h1{font-family:var(--serif);font-size:31px;letter-spacing:.14em;margin:6px 0 4px;text-align:center;color:#f5efe1}
   .sub{text-align:center;color:var(--muted);font-size:13px;margin:0 0 18px}
 
+  /* ---- 选档 ---- */
+  .levels{display:grid;grid-template-columns:repeat(4,1fr);gap:11px;margin:8px 0 4px}
+  @media(max-width:880px){.levels{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:520px){.levels{grid-template-columns:1fr}}
+  .lv{border:1px solid var(--line);background:var(--panel);border-radius:var(--radius);
+      padding:14px 15px 13px;cursor:pointer;text-align:left;color:inherit;font:inherit;
+      transition:border-color .12s ease,transform .09s ease}
+  .lv:hover{border-color:var(--accent);transform:translateY(-2px)}
+  .lv .nm{font-family:var(--serif);font-size:21px;letter-spacing:.12em;margin:0 0 6px;color:#f5efe1}
+  .lv .ds{font-size:12.5px;color:var(--muted);line-height:1.6}
+  .note{text-align:center;color:var(--muted);font-size:12.5px;margin:16px 0 0;line-height:1.75}
+  .note b{color:var(--cream)}
+
   .bar{display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;
        font-size:12.5px;color:var(--muted);margin-bottom:16px;
        border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:8px 0}
   .bar b{color:var(--cream);font-variant-numeric:tabular-nums}
   .bar .sep{opacity:.35}
+  .bar .tier{color:var(--accent);letter-spacing:.08em}
   .case{font-family:var(--mono);letter-spacing:.12em}
   .chances{display:inline-flex;gap:5px;vertical-align:-1px}
   .chances i{width:11px;height:11px;border-radius:50%;background:var(--accent);display:block}
@@ -45,8 +75,8 @@
   @media(max-width:640px){.board{grid-template-columns:repeat(3,1fr)}}
   @media(max-width:460px){.board{grid-template-columns:repeat(2,1fr)}}
 
-  .tile{position:relative;display:flex;align-items:center;justify-content:center;min-height:86px;
-        padding:16px 10px;border:1px solid #cbbfa3;border-radius:var(--radius);
+  .tile{position:relative;display:flex;align-items:center;justify-content:center;min-height:96px;
+        padding:14px 9px;border:1px solid #cbbfa3;border-radius:var(--radius);
         background:linear-gradient(180deg,var(--paper) 0%,var(--paper2) 100%);color:var(--ink);
         cursor:pointer;box-shadow:var(--shadow);transition:transform .09s ease,box-shadow .12s ease,filter .12s ease}
   .tile::before{content:"";position:absolute;inset:0;border-radius:var(--radius);pointer-events:none;
@@ -54,14 +84,17 @@
   .tile:hover:not(:disabled){transform:translateY(-3px)}
   .tile:active:not(:disabled){transform:translateY(-1px)}
   .tile .no{position:absolute;top:6px;left:9px;font-family:var(--mono);font-size:10.5px;color:#8d8471}
+  .tile .tw{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0}
   .tile .nm{font-size:14.5px;font-weight:700;text-align:center;line-height:1.4;word-break:break-all}
+  .tile .en{font-size:10.5px;font-weight:400;color:#8d8471;line-height:1.25;
+            text-align:center;word-break:break-word;letter-spacing:.01em}
   .tile:disabled{cursor:default}
   .tile.pick-no{filter:grayscale(.7) brightness(.94)}
   .tile.pick-no .nm{text-decoration:line-through;color:var(--bad)}
   .tile.dim{opacity:.38}
   .tile.imp{background:linear-gradient(180deg,#e2f3e8 0%,#cfe9da 100%)}
   .tile.imp::after{content:"内鬼";position:absolute;top:-9px;right:7px;background:var(--bad);color:#fff;
-        font-size:11px;font-weight:700;letter-spacing:.12em;padding:1px 7px;border-radius:99px;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+       font-size:11px;font-weight:700;letter-spacing:.12em;padding:1px 7px;border-radius:99px;box-shadow:0 2px 6px rgba(0,0,0,.3)}
   .tile.pick-ok{outline:2px solid var(--accent);outline-offset:-2px}
 
   .hint{margin:16px auto 0;max-width:520px;background:#fbf3dd;color:#3a3327;border-radius:3px;
@@ -82,6 +115,18 @@
          background:var(--panel);color:var(--cream);cursor:pointer}
   button.primary{background:var(--accent);border-color:var(--accent);color:#0f1a16;font-weight:700}
   button[hidden]{display:none}
+
+  /* ---- 结算 ---- */
+  .over{text-align:center;padding:18px 10px 4px}
+  .over .big{font-family:var(--serif);font-size:46px;letter-spacing:.06em;color:var(--accent);line-height:1.1}
+  .over .big small{font-size:20px;color:var(--muted);letter-spacing:.1em}
+  .recap{display:flex;gap:7px;justify-content:center;flex-wrap:wrap;margin:14px 0 2px}
+  .recap i{width:23px;height:23px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+           font-size:11px;font-style:normal;border:1px solid var(--line);font-family:var(--mono)}
+  .recap i.ok{background:var(--accent);border-color:var(--accent);color:#0f1a16}
+  .recap i.no{background:transparent;border-color:var(--bad);color:var(--bad)}
+  .over .tx{font-size:14.5px;color:var(--cream);margin:12px 0 4px}
+  .over .sub2{font-size:12.5px;color:var(--muted);margin-bottom:20px}
 </style>
 </head>
 <body>
@@ -91,46 +136,138 @@
   <h1>找内鬼</h1>
   <p class="sub">10 匹马中，9 匹是一伙的 —— 揪出那个例外</p>
 
-  <div class="bar" id="bar">
-    <span class="case" id="caseNo"></span>
-    <span class="sep">｜</span>
-    <span>机会 <span class="chances" id="chances"></span></span>
-    <span class="sep">｜</span>
-    <span>连破 <b id="streak">0</b> 件</span>
+  <!-- ① 选档 -->
+  <div id="stage">
+    <div class="levels" id="levels"></div>
+    <p class="note">每局 <b>10 题</b>，每题 <b>3 次机会</b>。</p>
   </div>
 
-  <div class="prompt">
-    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"></circle><line x1="20" y1="20" x2="15.6" y2="15.6"></line></svg>
-    <span class="pill">找出<b>内鬼</b></span>
+  <!-- ② 游戏 -->
+  <div id="play" hidden>
+    <div class="bar" id="bar">
+      <span class="case" id="caseNo"></span>
+      <span class="sep">｜</span>
+      <span>机会 <span class="chances" id="chances"></span></span>
+      <span class="sep">｜</span>
+      <span>本局已破 <b id="solved">0</b>/10</span>
+      <span class="sep">｜</span>
+      <span class="tier" id="tierName"></span>
+    </div>
+
+    <div class="prompt">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"></circle><line x1="20" y1="20" x2="15.6" y2="15.6"></line></svg>
+      <span class="pill" id="pill">找出<b>内鬼</b></span>
+    </div>
+
+    <div class="board" id="board"></div>
+    <div class="hint" id="hint" hidden></div>
+
+    <div class="foot">
+      <div class="msg" id="msg"></div>
+      <div class="reason" id="reason"></div>
+      <div class="actions"><button class="primary" id="bNext" hidden>下一题 →</button></div>
+    </div>
   </div>
 
-  <div class="board" id="board"></div>
-  <div class="hint" id="hint" hidden></div>
-
-  <div class="foot">
-    <div class="msg" id="msg"></div>
-    <div class="reason" id="reason"></div>
-    <div class="actions"><button class="primary" id="bNext" hidden>下一题 →</button></div>
+  <!-- ③ 结算 -->
+  <div id="over" hidden>
+    <div class="over">
+      <div class="big"><span id="ovScore">0</span><small> / 10</small></div>
+      <div class="recap" id="recap"></div>
+      <div class="tx" id="ovTx"></div>
+      <div class="sub2" id="ovSub"></div>
+      <div class="actions">
+        <button class="primary" id="bAgain">再来一局</button>
+        <button id="bBack">换个难度</button>
+      </div>
+    </div>
   </div>
 </div>
 
 <script>
-const MAX_CHANCES = 3;
-let BANK = [], QUEUE = [], P = null, left = 0, wrongs = 0, done = false, caseIdx = 0, solved = 0;
+const MAX_CHANCES = 3, ROUNDS = 10, MAX_SAME_DIM = 4;
+/* 四档：lo/hi 是题库难度分 D0 的区间；reveal = 是否开局就显示「共同点」 */
+/* g1: 该档只收「赢过同一场 G1」的重赏题，G2/G3 的重赏题留在困难 / 地狱 */
+const TIERS = [
+  { id: 0, nm: '入门', lo: 0, hi: 32, reveal: true, g1: true,
+    ds: '都是耳熟能详的名马<br>开局就告诉你共同点' },
+  { id: 1, nm: '进阶', lo: 32, hi: 48, reveal: true, g1: true,
+    ds: '大半是名马<br>开局就告诉你共同点' },
+  { id: 2, nm: '困难', lo: 48, hi: 68, reveal: false, g1: false,
+    ds: '冷门马变多<br>不告诉你共同点，得自己判断' },
+  { id: 3, nm: '地狱', lo: 68, hi: 1e9, reveal: false, g1: false,
+    ds: '冷门马、老马为主<br>不告诉你共同点，内鬼藏得也深' },
+];
+let BANK = [], EN = {}, TIER = null, POOL = [], QUEUE = [], P = null;
+let left = 0, wrongs = 0, done = false, caseIdx = 0, solved = 0, results = [];
 const el = id => document.getElementById(id);
 const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--){ const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
+/* 提示文案按维度说人话：
+   「同一场重赏」按赛事等级说清楚（入门 / 进阶只会出现 G1，就明说 G1）；
+   「战绩级别」其实就是「有没有赢过 G1」，直接这么说 */
+const DIM_LBL = { '战绩级别': '有没有赢过G1', '取胜赛场': '有没有海外重赏胜' };
+const dimLbl = p => p.dim === '同一场重赏'
+  ? (p.g === 1 ? '赢过同一场G1' : '赢过同一场G2/G3')
+  : (DIM_LBL[p.dim] || p.dim);
+/* 内鬼：日文名 ＋（英文名） */
+const impHtml = () => '<span class="imp">' + P.t[P.x] +
+  (EN[P.t[P.x]] ? '（' + EN[P.t[P.x]] + '）' : '') + '</span>';
+/* 揭晓答案时也点明是 G1；战绩级别的「赢过重赏但未赢 G1」改得更口语 */
+const reasonOf = p =>
+  (p.dim === '同一场重赏' && p.g === 1) ? p.r.replace('都赢过「', '都赢过 G1「')
+  : p.dim === '战绩级别' ? p.r.replace(/赢过重赏但未赢 G1/g, '只赢过重赏、没赢过 G1')
+  : p.r;
 const pad = n => String(n).padStart(2, '0');
 
 function fetchBank(){
   fetch('../assets/data/impostor.json')
     .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-    .then(d => { BANK = d.puzzles || []; if (!BANK.length) throw new Error('empty'); nextPuzzle(); })
+    .then(d => {
+      EN = d.en || {};
+      BANK = (d.puzzles || []).filter(p => typeof p.d === 'number');
+      if (!BANK.length) throw new Error('empty'); drawLevels();
+    })
     .catch(() => {
-      el('bar').innerHTML = ''; el('board').innerHTML = '';
-      el('msg').className = 'msg no';
-      el('msg').textContent = '题库加载失败';
-      el('reason').textContent = '请通过 HTTP 打开本页（浏览器禁止 file:// 读取数据）。';
+      el('stage').innerHTML = '<p class="note" style="color:var(--bad)">题库加载失败 —— 请通过 HTTP 打开本页（浏览器禁止 file:// 读取数据）。</p>';
     });
+}
+
+/* 该档的抽题池：难度分区间 ＋（入门/进阶）只收 G1 的重赏题 */
+function poolOf(t){
+  return BANK.filter(p => p.d >= t.lo && p.d < t.hi && !(t.g1 && p.g === 0));
+}
+function drawLevels(){
+  el('levels').innerHTML = TIERS.map(t =>
+    '<button class="lv" data-t="' + t.id + '">' +
+      '<div class="nm">' + t.nm + '</div>' +
+      '<div class="ds">' + t.ds + '</div>' +
+    '</button>').join('');
+}
+
+/* 一局 10 题：同一题型最多 MAX_SAME_DIM 题，免得一局里 8 题都在比「同年生」 */
+function buildRound(){
+  const src = shuffle(POOL), used = {}, out = [];
+  for (const p of src){
+    if (out.length >= ROUNDS) break;
+    if ((used[p.dim] || 0) >= MAX_SAME_DIM) continue;
+    used[p.dim] = (used[p.dim] || 0) + 1;
+    out.push(p);
+  }
+  for (const p of src){                        // 题目不够就放宽限制补齐
+    if (out.length >= ROUNDS) break;
+    if (out.indexOf(p) < 0) out.push(p);
+  }
+  return shuffle(out);
+}
+
+function start(id){
+  TIER = TIERS.find(t => t.id === id);
+  POOL = shuffle(poolOf(TIER));
+  if (!POOL.length) return;
+  QUEUE = buildRound(); caseIdx = 0; solved = 0; results = [];
+  el('stage').hidden = true; el('over').hidden = true; el('play').hidden = false;
+  el('tierName').textContent = TIER.nm;
+  nextPuzzle();
 }
 
 function renderChances(){
@@ -139,30 +276,41 @@ function renderChances(){
 }
 
 function nextPuzzle(){
-  if (!QUEUE.length) QUEUE = shuffle(BANK);
+  if (caseIdx >= ROUNDS) return finish();
+  if (!QUEUE.length) QUEUE = shuffle(POOL);
   P = QUEUE.pop();
   left = MAX_CHANCES; wrongs = 0; done = false;
   caseIdx++;
-  el('caseNo').textContent = 'CASE ' + pad(caseIdx);
-  el('streak').textContent = solved;
+  el('caseNo').textContent = 'CASE ' + pad(caseIdx) + ' / ' + ROUNDS;
+  el('solved').textContent = solved;
   el('msg').textContent = ''; el('msg').className = 'msg';
   el('reason').innerHTML = '';
   el('hint').hidden = true; el('hint').innerHTML = '';
   el('bNext').hidden = true;
+  /* 入门 / 进阶常驻显示「共同点：X」；困难 / 地狱不给 */
+  el('pill').innerHTML = TIER.reveal ? '共同点：<b>' + dimLbl(P) + '</b>' : '找出<b>内鬼</b>';
   renderChances();
   el('board').innerHTML = P.t.map((n, i) =>
     '<button class="tile" data-i="' + i + '">' +
       '<span class="no">' + pad(i + 1) + '</span>' +
-      '<span class="nm">' + n + '</span>' +
+      '<span class="tw">' +
+        '<span class="nm">' + n + '</span>' +
+        (EN[n] ? '<span class="en">' + EN[n] + '</span>' : '') +
+      '</span>' +
     '</button>').join('');
 }
 
 function showHint(){
-  const h = el('hint');
+  const h = el('hint'), half = P.r.split('；')[0];
   h.hidden = false;
-  h.innerHTML = wrongs === 1
-    ? '线索 ①　本题比的是「<b>' + P.dim + '</b>」'
-    : '线索 ②　' + P.r.split('；')[0];
+  if (!TIER.reveal){
+    h.innerHTML = wrongs === 1
+      ? '线索 ①　共同点是「<b>' + dimLbl(P) + '</b>」'
+      : '线索 ②　' + half;
+  } else {
+    /* L1 已经知道比什么了，直接给共同值 / 全解 */
+    h.innerHTML = wrongs === 1 ? '线索　' + half : '线索　' + P.r;
+  }
 }
 
 function pick(i){
@@ -184,32 +332,54 @@ function win(t, tiles){
   tiles[P.x].classList.add('imp');
   tiles.forEach((x, k) => { x.disabled = true; if (k !== P.x) x.classList.add('dim'); });
   t.classList.add('pick-ok');
-  solved++;
-  el('streak').textContent = solved;
+  solved++; results.push(true);
+  el('solved').textContent = solved;
   el('msg').className = 'msg ok';
   el('msg').textContent = '✓ 破案！';
-  el('reason').innerHTML = '<span class="imp">' + P.t[P.x] + '</span> —— ' + P.r;
-  el('bNext').hidden = false; el('bNext').textContent = '下一题 →';
+  el('reason').innerHTML = impHtml() + ' —— ' + reasonOf(P);
+  el('bNext').hidden = false;
+  el('bNext').textContent = caseIdx >= ROUNDS ? '看结算 →' : '下一题 →';
   el('hint').hidden = true;
 }
 
 function lose(tiles){
   done = true;
+  results.push(false);
   tiles[P.x].classList.add('imp');
   tiles.forEach(x => { x.disabled = true; });
-  solved = 0;
-  el('streak').textContent = 0;
   el('msg').className = 'msg no';
   el('msg').textContent = '✕ 机会用尽，内鬼逃了';
-  el('reason').innerHTML = '<span class="imp">' + P.t[P.x] + '</span> —— ' + P.r;
-  el('bNext').hidden = false; el('bNext').textContent = '再来一题 →';
+  el('reason').innerHTML = impHtml() + ' —— ' + reasonOf(P);
+  el('bNext').hidden = false;
+  el('bNext').textContent = caseIdx >= ROUNDS ? '看结算 →' : '下一题 →';
 }
 
+/* 结算：分数就是「破案几件」这个原始计数，不乘任何系数（难度、剩余机会都不加权） */
+function finish(){
+  el('play').hidden = true; el('over').hidden = false;
+  el('ovScore').textContent = solved;
+  el('recap').innerHTML = results.map(ok =>
+    '<i class="' + (ok ? 'ok' : 'no') + '">' + (ok ? '✓' : '✗') + '</i>').join('');
+  el('ovTx').textContent =
+      solved >= 10 ? '全破 —— 一件都没漏'
+    : solved >= 8  ? '名探偵，手感很稳'
+    : solved >= 5  ? '干得不错，再练练'
+    : solved >= 2  ? '有点吃力？可以先玩「入门」'
+                   : '这批题偏硬，换个难度试试';
+  el('ovSub').textContent = TIER.nm + ' ｜ 失手 ' + (ROUNDS - solved) + ' 件';
+}
+
+el('levels').addEventListener('click', e => {
+  const b = e.target.closest('.lv'); if (!b) return;
+  start(+b.dataset.t);
+});
 el('board').addEventListener('click', e => {
   const t = e.target.closest('.tile'); if (!t) return;
   pick(+t.dataset.i);
 });
 el('bNext').onclick = nextPuzzle;
+el('bAgain').onclick = () => start(TIER.id);
+el('bBack').onclick = () => { el('over').hidden = true; el('stage').hidden = false; };
 
 fetchBank();
 </script>
