@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>赛马连线</title>
+<!--
+  赛马连线（Connections 玩法）
+  ─────────────────────────
+  16 匹马分成 4 组 × 4 匹，每组一个隐藏主题。选 4 匹提交，对了揭示主题并锁定。
+
+  出题的生命线：**每匹马恰好满足 4 个主题中的 1 个** ⇒ 分组唯一，不存在第二种分法。
+  做法：每张卡只从「独占成员」里挑 4 匹（满足本卡、且不满足另外 3 张卡）。
+
+  主题可以是**复合条件**：赢过 皐月賞 ＋ 赢过 東京優駿（日本ダービー）⇒ 二冠馬。
+  复合是既往小游戏（Bingo / 找内鬼 / 猜猜我是谁）都没有的，本作第一次启用 conds 长度 2。
+
+  数据（纯静态，fetch 即可）
+    ../assets/data/connections/cards.json   主题卡（单条件 + 复合），h 按名气降序
+    ../assets/data/connections/names.json   马 ID → 日文名 / 英文名 / 名气
+
+  配色纪律（§0.2）：一种颜色只准一种含义。
+    未解开 ⇒ 一律中性（颜色若按组区分就等于把答案画出来了）
+    解开后 ⇒ 颜色 = 该组的身份；红色只留给「错了」
+-->
+<style>
+  :root{
+    --cream:#fff5e4; --paper:#fffdf8; --ink:#2c2118; --muted:#9b8a74; --line:#ecdfc9;
+    --red:#e33d3d; --gold:#f0ac1e; --blue:#2f6fdb; --green:#22a35e; --purple:#8b5cf6;
+    --shadow:0 6px 0 rgba(44,33,24,.10), 0 12px 26px rgba(44,33,24,.13);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;color:var(--ink);min-height:100vh;font-size:15px;line-height:1.6;
+       font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+       background:var(--cream);
+       background-image:radial-gradient(rgba(47,111,219,.06) 2px,transparent 2px),
+                        radial-gradient(rgba(227,61,61,.05) 2px,transparent 2px);
+       background-size:34px 34px,34px 34px;background-position:0 0,17px 17px}
+  .wrap{max-width:900px;margin:0 auto;padding:20px 16px 70px}
+  .back{display:inline-block;font-size:12.5px;color:var(--muted);text-decoration:none;margin-bottom:12px;letter-spacing:.04em}
+  .back:hover{color:var(--red)}
+  h1{text-align:center;margin:4px 0 2px;font-family:"Songti SC","SimSun",Georgia,serif;
+     font-size:28px;letter-spacing:.12em}
+
+  /* 难度（分段控件） + 容错 */
+  .bar{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin:16px 0 4px}
+  .seg{display:inline-flex;border:2px solid var(--line);border-radius:99px;overflow:hidden;
+       background:var(--paper);box-shadow:0 3px 0 rgba(44,33,24,.08)}
+  .diff{font:inherit;font-size:12.5px;font-weight:700;padding:6px 17px;cursor:pointer;border:0;
+        background:transparent;color:var(--muted);transition:background .15s,color .15s}
+  .diff + .diff{border-left:2px solid var(--line)}
+  .diff.on{background:var(--ink);color:#fff}
+  .lives{display:flex;gap:5px}
+  .lives i{width:9px;height:9px;border-radius:50%;background:var(--ink);opacity:.75;
+           transition:opacity .2s,background .2s}
+  .lives i.gone{background:var(--red);opacity:.22}
+  .msg{text-align:center;font-size:13.5px;color:var(--muted);min-height:22px;margin:8px 0 0}
+  .msg.no{color:var(--red);font-weight:700}
+
+  /* 进度条：四段对应四组，解开一段才染上该组的颜色（未解开保持中性，不泄露分组） */
+  .prog{display:flex;gap:6px;justify-content:center;margin:12px 0 2px}
+  .prog i{width:44px;height:6px;border-radius:99px;background:var(--line);transition:background .3s}
+  .prog i.on{background:var(--c)}
+
+  /* 已解开的组 */
+  .grp{border-radius:13px;padding:9px 14px;margin:8px 0;color:#fff;text-align:center;
+       background:linear-gradient(180deg,rgba(255,255,255,.18),rgba(0,0,0,.12)),var(--c);
+       box-shadow:0 4px 0 rgba(44,33,24,.16);animation:in .34s ease-out}
+  @keyframes in{0%{transform:translateY(-6px) scale(.97);opacity:0}100%{transform:none;opacity:1}}
+  .grp .gt{font-size:12.5px;font-weight:700;letter-spacing:.03em;opacity:.92}
+  .grp .gm{font-size:16px;font-weight:700;line-height:1.35;margin-top:1px}
+  .grp.lost{filter:grayscale(.5);opacity:.7;box-shadow:none}
+
+  /* 棋盘 */
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
+  @media(max-width:560px){.grid{grid-template-columns:repeat(2,1fr);gap:7px}}
+  .tile{position:relative;min-height:80px;padding:12px 8px;border:2px solid var(--line);border-radius:12px;
+        background:linear-gradient(180deg,#fffdf8 0%,#fdf5e7 100%);
+        color:var(--ink);font:inherit;text-align:center;cursor:pointer;overflow:hidden;
+        display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+        box-shadow:0 4px 0 rgba(44,33,24,.09);
+        transition:transform .09s,border-color .12s,opacity .15s,box-shadow .12s}
+  .tile .jp{font-size:15px;font-weight:700;line-height:1.24;word-break:break-all}
+  .tile .en{font-size:10px;color:var(--muted);line-height:1.2;word-break:break-word}
+  .tile::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;
+        background:var(--line);transition:background .12s}
+  .tile:hover{transform:translateY(-2px);border-color:var(--ink);box-shadow:0 6px 0 rgba(44,33,24,.10)}
+  .tile:hover::before{background:var(--ink)}
+  .tile.sel{background:var(--ink);border-color:var(--ink);color:#fff;
+        box-shadow:0 4px 0 rgba(44,33,24,.32)}
+  .tile.sel::before{background:var(--gold)}
+  .tile.sel .en{color:rgba(255,255,255,.62)}
+  .tile .ord{position:absolute;top:5px;right:6px;width:19px;height:19px;border-radius:50%;
+        background:var(--gold);color:#3a2a06;font-size:11px;font-weight:700;
+        display:flex;align-items:center;justify-content:center;animation:pop .2s ease-out}
+  @keyframes pop{0%{transform:scale(.4);opacity:0}100%{transform:none;opacity:1}}
+  .tile.dim{opacity:.42}                       /* 已选满 4 个时，压暗未选中的 */
+  .tile.bad{animation:sh .36s;border-color:var(--red)}
+  @keyframes sh{0%,100%{transform:translateX(0)}20%{transform:translateX(-7px)}
+                40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(3px)}}
+
+  .actions{margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  button.b{font:inherit;font-size:14px;font-weight:700;padding:10px 26px;border-radius:99px;cursor:pointer;
+        border:2px solid var(--line);background:var(--paper);color:var(--ink);box-shadow:0 4px 0 rgba(44,33,24,.10)}
+  button.b:hover:not(:disabled){transform:translateY(-1px)}
+  button.b:active:not(:disabled){transform:translateY(2px);box-shadow:0 1px 0 rgba(44,33,24,.10)}
+  button.b:disabled{opacity:.42;cursor:default}
+  button.b.pri{background:var(--ink);border-color:var(--ink);color:#fff;box-shadow:0 4px 0 rgba(44,33,24,.35)}
+
+  #confetti{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:9}
+  #confetti i{position:absolute;top:-14px;width:9px;height:14px;border-radius:2px;opacity:.95;
+        animation:fall linear forwards}
+  @keyframes fall{to{transform:translateY(105vh) rotate(720deg);opacity:.9}}
+</style>
+</head>
+<body>
+<div id="confetti"></div>
+<div class="wrap">
+  <a class="back" href="../">← 返回首页</a>
+  <h1>赛马连线</h1>
+
+  <div class="bar">
+    <div class="seg">
+      <button class="diff" data-d="easy">Easy</button>
+      <button class="diff" data-d="normal">Normal</button>
+      <button class="diff" data-d="hard">Hard</button>
+    </div>
+    <span class="lives" id="lives" hidden></span>
+  </div>
+  <div class="msg" id="msg"></div>
+
+  <div id="board" hidden>
+    <div class="prog" id="prog"></div>
+    <div id="solved"></div>
+    <div class="grid" id="grid"></div>
+    <div class="actions">
+      <button class="b" id="bClear">清除选择</button>
+      <button class="b pri" id="bGo" disabled>提交</button>
+      <button class="b" id="bNew" hidden>换一盘</button>
+    </div>
+  </div>
+  <div class="msg" id="load">载入题库…</div>
+</div>
+
+<script>
+/* EASY_TYPES：Easy 档只用认得度高的几类主题；Normal / Hard 全放开
+   EASY_CONF ：Easy 档的混淆度上限（池内同时满足 ≥2 个主题的马占比）
+   MAX_LIVES ：Hard 档全局容错；Easy / Normal 不限（不显示容错点）
+   PICK_TOP  ：每组从「独占成员」的前几名里随机挑 4 匹（h 已按名气降序 ⇒ 挑出来的都认得） */
+const EASY_TYPES = new Set(['sire','dsire','owner','breeder','coat','gen','center','ctry','g1race']);
+/* EASY_MAX_CMP：Easy 档最多几组可以是复合条件。
+   不加这条的话 Easy 和 Normal 一样难 —— 题库里复合 4678 张 vs 单条件 387 张，
+   纯随机抽必然 ≈3.7/4 组都是复合，而 Easy 是给休闲玩家的档位。
+   Normal 与 Hard 用**完全相同**的题池（只差容错次数），与参照站一致。 */
+const EASY_CONF = 0.10, EASY_MAX_CMP = 2, MAX_LIVES = { hard: 5 }, PICK_TOP = 10;
+const GCOLOR = ['#2f6fdb', '#22a35e', '#f0ac1e', '#8b5cf6'];   // 四组的身份色（红色留给"错了"）
+
+let CARDS = [], NM = { n: [], e: [] };
+/* order：棋盘上格子的**固定顺序**。只在开局打乱一次，解开一组就把那 4 匹摘掉，
+   之后顺序不再变 —— 否则每次点击触发 render() 都会重排，玩家点一下棋盘就跳一次。 */
+let diff = 'normal', groups = [], solved = [], sel = [], order = [], lives = 0, done = false;
+
+const el = id => document.getElementById(id);
+const ri = n => Math.random() * n | 0;
+const pick = a => a[ri(a.length)];
+const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--){ const j = ri(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+/* ---------- 组题 ---------- */
+function confusability(q){
+  const u = new Set();
+  q.forEach(c => c.set.forEach(h => u.add(h)));
+  let multi = 0;
+  for (const h of u) if (q.filter(c => c.set.has(h)).length >= 2) multi++;
+  return multi / u.size;
+}
+
+function build(){
+  const easy = diff === 'easy';
+  const pool = easy ? CARDS.filter(c => c.conds.every(k => EASY_TYPES.has(k.t))) : CARDS;
+  for (let t = 0; t < 4000; t++){
+    const q = [];
+    const seen = new Set();
+    let guard = 0;
+    while (q.length < 4 && guard++ < 200){          // 四个不同「主类型」，题目才有变化
+      const c = pick(pool);
+      if (seen.has(c.conds[0].t)) continue;
+      seen.add(c.conds[0].t); q.push(c);
+    }
+    if (q.length < 4) continue;
+    if (easy && q.filter(c => c.conds.length === 2).length > EASY_MAX_CMP) continue;
+    q.forEach(c => c.set || (c.set = new Set(c.h)));
+    // 生命线：每张卡只从「独占成员」里挑 —— 每匹马恰好属于 1 组 ⇒ 分组唯一
+    const excl = q.map((c, i) => {
+      const others = new Set();
+      q.forEach((o, j) => { if (j !== i) o.set.forEach(h => others.add(h)); });
+      return c.h.filter(h => !others.has(h));
+    });
+    if (!excl.every(e => e.length >= 4)) continue;
+    if (diff === 'easy' && confusability(q) > EASY_CONF) continue;
+    const g = q.map((c, i) => ({
+      card: c,
+      hs: shuffle(excl[i].slice(0, PICK_TOP)).slice(0, 4)
+    }));
+    if (new Set(g.flatMap(x => x.hs)).size !== 16) continue;
+    return shuffle(g.map((x, i) => ({ ...x, color: GCOLOR[i] })));
+  }
+  return null;
+}
+
+/* ---------- 渲染 ---------- */
+function render(){
+  // 进度条：只有解开的那一段才染上组色，未解开的保持中性
+  el('prog').innerHTML = groups.map(g => '<i class="' + (solved.includes(g) ? 'on' : '') +
+    '" style="--c:' + g.color + '"></i>').join('');
+  el('solved').innerHTML = solved.map(g =>
+    '<div class="grp' + (g.late ? ' lost' : '') + '" style="--c:' + g.color + '">' +
+      '<div class="gt">' + g.card.n + '</div>' +
+      '<div class="gm">' + g.hs.map(h => NM.n[h]).join(' ／ ') + '</div>' +
+    '</div>').join('');
+  if (done){
+    el('grid').innerHTML = '';
+    return;
+  }
+  const full = sel.length === 4;
+  el('grid').innerHTML = order.map(h => {
+    const k = sel.indexOf(h);
+    return '<button class="tile' + (k >= 0 ? ' sel' : (full ? ' dim' : '')) + '" data-h="' + h + '">' +
+      '<span class="jp">' + NM.n[h] + '</span>' +
+      (NM.e[h] ? '<span class="en">' + NM.e[h] + '</span>' : '') +
+      (k >= 0 ? '<span class="ord">' + (k + 1) + '</span>' : '') +
+    '</button>';
+  }).join('');
+  el('bGo').disabled = sel.length !== 4;
+  el('lives').hidden = !MAX_LIVES[diff];
+  if (MAX_LIVES[diff]){
+    el('lives').innerHTML = Array.from({ length: MAX_LIVES[diff] },
+      (_, i) => '<i class="' + (i < lives ? 'gone' : '') + '"></i>').join('');
+  }
+}
+
+/* ---------- 交互 ---------- */
+el('grid').addEventListener('click', e => {
+  const t = e.target.closest('.tile'); if (!t || done) return;
+  const h = +t.dataset.h;
+  if (sel.includes(h)) sel = sel.filter(x => x !== h);
+  else if (sel.length < 4) sel.push(h);
+  render();
+});
+
+el('bClear').onclick = () => { sel = []; render(); };
+
+el('bGo').onclick = () => {
+  if (sel.length !== 4 || done) return;
+  const hit = groups.find(g => !solved.includes(g) && sel.every(h => g.hs.includes(h)));
+  el('msg').className = 'msg';
+  if (hit){
+    hit.hs = sel.slice();                    // 按玩家提交的顺序展示（成员等价于原组）
+    solved.push(hit); sel = [];
+    order = order.filter(h => !hit.hs.includes(h));   // 摘掉这 4 匹，其余格子**保持原位**
+    el('msg').textContent = '';
+    render();
+    if (solved.length === 4) finish(true);
+    return;
+  }
+  // 错了：记一次；「差一匹」是 Connections 的招牌反馈（说明这次提交差在哪）
+  if (MAX_LIVES[diff]) lives++;
+  const near = groups.some(g => !solved.includes(g) && sel.filter(h => g.hs.includes(h)).length === 3);
+  el('msg').className = 'msg no';
+  el('msg').textContent = near ? '差一匹' : '不是一组';
+  document.querySelectorAll('.tile.sel').forEach(t => {
+    t.classList.add('bad'); setTimeout(() => t.classList.remove('bad'), 380);
+  });
+  if (MAX_LIVES[diff] && lives >= MAX_LIVES[diff]) return finish(false);
+  setTimeout(() => { sel = []; render(); }, 620);
+};
+
+function finish(win){
+  done = true;
+  // 输了也把答案亮出来（标 late ⇒ 渲染时压暗，和玩家自己解开的组区分开）
+  if (!win) groups.filter(g => !solved.includes(g)).forEach(g => { g.late = true; solved.push(g); });
+  el('msg').className = 'msg';
+  el('msg').textContent = '';
+  sel = []; render();
+  el('bClear').hidden = true; el('bGo').hidden = true; el('bNew').hidden = false;
+  if (win) confetti(70);
+}
+
+function confetti(n){
+  const box = el('confetti'), cols = ['#e33d3d', '#f0ac1e', '#2f6fdb', '#22a35e', '#8b5cf6', '#e8558b'];
+  let html = '';
+  for (let i = 0; i < n; i++)
+    html += '<i style="left:' + (Math.random() * 100).toFixed(1) + '%;background:' + pick(cols) +
+      ';animation-duration:' + (1.6 + Math.random() * 1.6).toFixed(2) + 's;animation-delay:' +
+      (Math.random() * .7).toFixed(2) + 's"></i>';
+  box.innerHTML = html;
+  setTimeout(() => { box.innerHTML = ''; }, 4200);
+}
+
+function start(){
+  const g = build();
+  if (!g){ el('load').textContent = '组题失败，刷新重试'; return; }
+  groups = g; solved = []; sel = []; lives = 0; done = false;
+  order = shuffle(g.flatMap(x => x.hs));      // 开局打乱一次，之后不再重排
+  el('load').hidden = true; el('board').hidden = false;
+  el('bClear').hidden = false; el('bGo').hidden = false; el('bNew').hidden = true;
+  document.querySelectorAll('.diff').forEach(b => b.classList.toggle('on', b.dataset.d === diff));
+  render();
+}
+
+document.querySelectorAll('.diff').forEach(b => b.onclick = () => { diff = b.dataset.d; start(); });
+el('bNew').onclick = () => start();
+
+/* 出错时必须说清是哪一步：fetch 失败 / HTTP 状态 / 组题或渲染抛异常，
+   否则一律显示「载入失败」，真因被吞掉，没法排查。 */
+const get = u => fetch(u).then(r => {
+  if (!r.ok) throw new Error(u + ' → HTTP ' + r.status);
+  return r.json();
+});
+Promise.all([
+  get('../assets/data/connections/cards.json'),
+  get('../assets/data/connections/names.json')
+]).then(([d, nm]) => {
+  CARDS = d.cards || []; NM = nm;
+  if (!CARDS.length) throw new Error('cards.json 里没有卡片');
+  start();
+}).catch(e => {
+  console.error('[赛马连线] 启动失败：', e);
+  el('load').className = 'msg no';
+  el('load').textContent = '启动失败：' + (e && e.message ? e.message : e) +
+    '　（若是用 file:// 直接打开的，浏览器禁止读本地数据，请用 HTTP 访问）';
+});
+</script>
+</body>
+</html>
