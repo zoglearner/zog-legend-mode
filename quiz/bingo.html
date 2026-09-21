@@ -9,7 +9,7 @@
   ─────────
   棋盘 4×4 = 16 格，每格一个「单条件」（父馬 = X / 赢过有馬記念 / 芦毛 / 栗東所属 …）。
   牌堆一匹匹发：放进「它满足的任意空格」，想不起来就跳过（跳过的攒到下一轮再发）。
-  16 格填满即 BINGO；不限时、不计分，只记「误放次数」和「用了几轮」。
+  16 格填满即 BINGO；不限时、不计分 —— 轮次 / 误放次数只在内部流转，不给玩家任何统计提示。
 
   数据（纯静态，fetch 即可）
     ../assets/data/bingo/cards.json  卡池 {conds:[{t,v}], n:文案, w:池内占比, fk:够有名候选数, h:[马ID]}
@@ -22,6 +22,8 @@
     ④ 洗牌后一匹匹发
   认得度：每张卡的 h 在生成端按名气降序；挑马时优先名气 ≥ GOOD 的
          ⇒ NM.f（名气）**只在内部用来挑马，从不显示给玩家**
+  配色：**格子颜色 = 条件类型**（同类型同色），球固定中性色
+         ⇒ 颜色不能变成"该放哪一格"的提示，所以球不参与配色；红色只留给「放错了」
 -->
 <style>
   :root{
@@ -54,7 +56,6 @@
   /* ---- 当前这匹：摇出来的球 ---- */
   .stage{display:flex;align-items:center;justify-content:center;gap:20px;margin:2px auto 12px}
   .side{display:flex;flex-direction:column;align-items:flex-start;gap:8px}
-  .side .hint{font-size:11.5px;color:var(--muted);line-height:1.45}
   .ball{width:186px;height:186px;border-radius:50%;position:relative;
         background:radial-gradient(circle at 33% 27%,#ffffff 0%,var(--bc1) 42%,var(--bc2) 100%);
         box-shadow:0 10px 0 rgba(44,33,24,.10),0 16px 30px rgba(44,33,24,.18);display:flex;align-items:center;justify-content:center}
@@ -63,13 +64,11 @@
   .ball .inner{width:74%;height:74%;border-radius:50%;background:rgba(255,255,255,.95);
         display:flex;flex-direction:column;align-items:center;justify-content:center;
         text-align:center;padding:8px;box-shadow:inset 0 0 12px rgba(44,33,24,.07)}
-  .ball .no{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.1em}
   .ball .nm{font-size:17px;font-weight:700;line-height:1.25;word-break:break-all;margin:2px 0}
   .ball .nm.long{font-size:14px}
   .ball .en{font-size:11px;color:var(--muted);line-height:1.2;word-break:break-word}
-  .ball.B{--bc1:#5b93ea;--bc2:#1f4fae} .ball.I{--bc1:#ef6a6a;--bc2:#b32323}
-  .ball.N{--bc1:#a98bfa;--bc2:#5b32c9} .ball.G{--bc1:#4fc182;--bc2:#177a44}
-  .ball.O{--bc1:#f6c64f;--bc2:#c07f08}
+  /* 球固定中性色 —— 不再轮换 B/I/N/G/O 配色（那五在真 Bingo 里是列号，会误导） */
+  .ball{--bc1:#9c8b76;--bc2:#453729}
   .ball.shake{animation:sh .36s}
   @keyframes sh{0%,100%{transform:translateX(0)}20%{transform:translateX(-9px)}40%{transform:translateX(8px)}
                 60%{transform:translateX(-6px)}80%{transform:translateX(4px)}}
@@ -81,54 +80,43 @@
   @media(max-width:620px){.board{grid-template-columns:repeat(2,1fr);gap:8px}
     .stage{flex-direction:column;gap:12px}
     .side{align-items:center;text-align:center}}
-  .cell{position:relative;min-height:92px;padding:15px 9px 10px;border:2px solid var(--line);border-radius:12px;
+  .cell{--c:var(--muted);position:relative;min-height:98px;padding:27px 9px 10px;border:2px solid var(--line);border-radius:12px;
         background:var(--paper);color:var(--ink);font:inherit;text-align:center;cursor:pointer;overflow:hidden;
         display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
         box-shadow:0 4px 0 rgba(44,33,24,.08);transition:transform .09s,box-shadow .12s,border-color .12s}
   .cell::before{content:"";position:absolute;top:0;left:0;right:0;height:5px;background:var(--c)}
   .cell:hover:not(.done){transform:translateY(-3px);box-shadow:0 7px 0 rgba(44,33,24,.10);border-color:var(--c)}
-  .cell .num{position:absolute;top:8px;left:9px;font-family:var(--mono);font-size:10.5px;font-weight:700;
-        color:#fff;background:var(--c);border-radius:99px;padding:0 6px;line-height:15px}
+  .cell .tlab{position:absolute;top:7px;left:8px;font-size:10px;font-weight:700;letter-spacing:.02em;
+        color:#fff;background:var(--c);border-radius:99px;padding:0 7px;line-height:16px;white-space:nowrap}
   .cell .cond{font-size:12.5px;line-height:1.42;word-break:break-word;padding:0 2px}
-  .cell.done{border-color:var(--c);background:#fffaf0;cursor:default}
+  /* 已填的格子做成**深色**：把类型色压暗当底，白字 —— 一眼就能数出填了几格。
+     类型信息不丢：底色仍带该类型的色相，左上角的类型标签也还是满色。 */
+  .cell.done{border-color:var(--c);cursor:default;color:#fff;
+        background:linear-gradient(rgba(24,17,11,.72),rgba(24,17,11,.72)),var(--c);
+        box-shadow:0 4px 0 rgba(24,17,11,.22)}
+  .cell.done .cond2{color:rgba(255,255,255,.6);opacity:1}
+  .cell.done .who{color:#fff}
+  .cell.done .en2{color:rgba(255,255,255,.5)}
   .cell .cond2{font-size:10px;color:var(--muted);text-decoration:line-through;opacity:.8;
         line-height:1.3;word-break:break-word;padding:0 2px}
   .cell .who{font-size:13px;font-weight:700;color:var(--c);line-height:1.32;word-break:break-all}
   .cell .en2{font-size:10px;color:var(--muted);line-height:1.2;word-break:break-word}
-  .cell .stamp{position:absolute;top:5px;right:6px;width:22px;height:22px;border-radius:50%;background:var(--c);
-        color:#fff;font-size:13px;display:flex;align-items:center;justify-content:center;font-weight:700}
+  .cell .stamp{position:absolute;top:5px;right:6px;width:22px;height:22px;border-radius:50%;background:#fff;
+        color:var(--c);font-size:13px;display:flex;align-items:center;justify-content:center;font-weight:700}
+  /* 结束时仍未填上的格子：淡出 + 虚线边，表示「这局填不上了」（不加任何文字） */
+  .cell.dead{opacity:.4;border-style:dashed;background:#f1ebdf;box-shadow:none}
   .cell.just .stamp{animation:st .42s cubic-bezier(.2,1.5,.4,1)}
   @keyframes st{0%{transform:scale(2.4);opacity:0}60%{opacity:1}100%{transform:scale(1)}}
   .cell.no{animation:sh .36s;border-color:var(--red)}
-  .cell.c0{--c:var(--blue)} .cell.c1{--c:var(--red)} .cell.c2{--c:var(--purple)}
-  .cell.c3{--c:var(--green)} .cell.c4{--c:var(--gold)}
+  /* --c 由 JS 按「条件类型」内联：同类型同色。红色不进调色板，只留给「放错了」 */
 
-  .actions{margin-top:16px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
   button.b{font:inherit;font-size:14px;font-weight:700;padding:10px 26px;border-radius:99px;cursor:pointer;
         border:2px solid var(--line);background:var(--paper);color:var(--ink);box-shadow:0 4px 0 rgba(44,33,24,.10)}
   button.b:hover{transform:translateY(-1px)}
   button.b:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(44,33,24,.10)}
   button.b.skip{border-color:var(--blue);color:var(--blue)}
-  button.b.pri{background:var(--red);border-color:var(--red);color:#fff;box-shadow:0 4px 0 #a82424}
-  button.b.pri2{background:var(--gold);border-color:var(--gold);color:#3a2a06;box-shadow:0 4px 0 #b57d09}
   .msg{text-align:center;font-size:13.5px;color:var(--muted);min-height:22px;margin-top:12px}
   .msg.no{color:var(--red);font-weight:700}
-
-  /* ---- 结算 ---- */
-  .over{text-align:center;padding:10px 10px 4px}
-  .over .hd{display:flex;justify-content:center;gap:6px;margin-bottom:8px}
-  .over .hd span{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:50%;
-        color:#fff;font-family:var(--mono);font-size:22px;font-weight:700;animation:bj .7s ease-out both}
-  .over .hd span:nth-child(1){background:var(--blue);animation-delay:0s}
-  .over .hd span:nth-child(2){background:var(--red);animation-delay:.08s}
-  .over .hd span:nth-child(3){background:var(--purple);animation-delay:.16s}
-  .over .hd span:nth-child(4){background:var(--green);animation-delay:.24s}
-  .over .hd span:nth-child(5){background:var(--gold);animation-delay:.32s}
-  @keyframes bj{0%{transform:translateY(-26px) scale(.6);opacity:0}60%{transform:translateY(4px) scale(1.1)}100%{transform:none;opacity:1}}
-  .over .big{font-family:var(--serif);font-size:52px;letter-spacing:.04em;color:var(--red);line-height:1.05}
-  .over .big small{font-size:20px;color:var(--muted)}
-  .over .tx{font-size:15px;font-weight:700;margin:10px 0 4px}
-  .over .sub2{font-size:12.5px;color:var(--muted);margin-bottom:20px}
 
   /* ---- 撒花 ---- */
   #confetti{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:9}
@@ -145,34 +133,21 @@
 
   <div id="play" hidden>
     <div class="stage">
-      <div class="ball B" id="ball">
+      <div class="ball" id="ball">
         <div class="inner">
-          <div class="no" id="curNo">—</div>
           <div class="nm" id="curNm"></div>
           <div class="en" id="curEn"></div>
         </div>
       </div>
       <div class="side">
         <button class="b skip" id="bSkip">跳过</button>
-        <div class="hint">这匹想不起来？<br>跳过，攒到下一轮再摇</div>
+        <!-- 结束后：名片和跳过收起，「换一盘」顶在同一个位置（不常驻） -->
+        <button class="b" id="bNew" hidden>换一盘</button>
       </div>
     </div>
     <div class="msg" id="msg"></div>
 
     <div class="board" id="board"></div>
-  </div>
-
-  <div id="over" hidden>
-    <div class="over">
-      <div class="hd" id="hd" hidden><span>B</span><span>I</span><span>N</span><span>G</span><span>O</span></div>
-      <div class="big"><span id="ovScore">0</span><small> / 16</small></div>
-      <div class="tx" id="ovTx"></div>
-      <div class="sub2" id="ovSub"></div>
-      <div class="actions">
-        <button class="b pri" id="bAgain">同盘再来</button>
-        <button class="b pri2" id="bNew">换一盘</button>
-      </div>
-    </div>
   </div>
 
 </div>
@@ -184,12 +159,24 @@
    MIN_PER   ：**每一格在牌堆里至少要有几张候选**（这是"填得满"的关键，比牌堆总数重要）
    SLACK     ：补完保底后再多发的纯干扰牌 */
 const SLOTS = 16, WIDE = 0.35, MAX_WIDE = 2, MAX_SAME_TYPE = 3, TYPE_N = 9;
-const FAMOUS_OWN = 12, FAMOUS_EXTRA = 24, MIN_FK = 6, GOOD = 3, MIN_PER = 3, SLACK = 8;
-const BALLS = ['B', 'I', 'N', 'G', 'O'];
+/* MIN_PER：每格在牌堆里至少保底几张候选。**3 → 4**（2026-09-21）：
+   模拟 400 局，保底 3 张时有 5 局走到「某空格剩余候选被放光」的死局（都发生在填满 15/16、
+   跳过 20+ 次之后），保底 4 张降到 0 局，代价只是牌堆多半张。 */
+const FAMOUS_OWN = 12, FAMOUS_EXTRA = 24, MIN_FK = 6, GOOD = 3, MIN_PER = 4, SLACK = 8;
+/* 格子配色 = 条件类型（同类型同色）。每盘从调色板按类型首次出现的顺序分配，
+   一盘内 9 色互不重复。**不含红色** —— 红色只表示「放错了」，不能被类型占用。 */
+const PALETTE = ['#2563eb', '#7c3aed', '#db2777', '#ea580c', '#ca8a04',
+                 '#65a30d', '#059669', '#0891b2', '#64748b'];
+/* 格子左上角的类型标签（与生成器里卡片文案的用词保持一致） */
+const TYPE_LABEL = {
+  sire: '父馬', dsire: '母父', trainer: '厩舎', owner: '馬主', breeder: '牧場',
+  ctry: '産国', gen: '世代', coat: '毛色', center: '所属',
+  g1n: 'G1 胜数', money: '赏金', g1race: '重赏', venue: '赛场', venueg: '重赏赛场', surf: '场地'
+};
 
-let CARDS = [], NM = { n: [], e: [], f: [] };
-let board = [], deck = [], at = 0, skipped = [], roundNo = 1;
-let filled = 0, wrong = 0, cur = null, done = false;
+let CARDS = [], NM = { n: [], e: [], f: [] }, COLORS = {};
+let board = [], deck = [], at = 0, skipped = [];
+let filled = 0, cur = null, done = false;
 
 const el = id => document.getElementById(id);
 const ri = n => Math.random() * n | 0;
@@ -256,36 +243,35 @@ function buildDeck(){
   deck = shuffle(pool);
 }
 
-function start(fresh){
-  if (fresh){
-    const sel = pickCards();
-    if (!sel){ el('msg').textContent = '组盘失败，刷新重试'; return; }
-    board = sel.map(c => ({ n: c.n, list: c.h, set: new Set(c.h), who: null }));
-  } else {
-    board.forEach(b => { b.who = null; });
-  }
+function start(){
+  const sel = pickCards();
+  if (!sel){ el('msg').textContent = '组盘失败，刷新重试'; return; }
+  board = sel.map(c => ({ n: c.n, t: c.conds[0].t, list: c.h, set: new Set(c.h), who: null }));
+  let k = 0; COLORS = {};                                 // 按类型分配颜色（同类型同色）
+  for (const b of board) if (!(b.t in COLORS)) COLORS[b.t] = PALETTE[k++ % PALETTE.length];
   buildDeck();
-  at = 0; skipped = []; roundNo = 1;
-  filled = 0; wrong = 0; done = false; cur = null;
-  el('over').hidden = true; el('play').hidden = false;
-  el('hd').hidden = true; el('confetti').innerHTML = '';
+  at = 0; skipped = [];
+  filled = 0; done = false; cur = null;
+  el('play').hidden = false;
+  el('ball').hidden = false; el('bSkip').hidden = false; el('bNew').hidden = true;
+  el('confetti').innerHTML = '';
   el('msg').textContent = ''; el('msg').className = 'msg';
   renderBoard(); nextCard();
 }
 
 /* ---------- 渲染 ---------- */
 function cellHtml(b, i, just){
-  const col = ' c' + (i % 5);
+  const st = ' style="--c:' + (COLORS[b.t] || 'var(--muted)') + '"';   // 同类型同色
   if (b.who != null){
-    return '<button class="cell' + col + ' done' + (just ? ' just' : '') + '" data-i="' + i + '">' +
-      '<span class="num">' + (i + 1) + '</span><span class="stamp">✓</span>' +
+    return '<button class="cell done' + (just ? ' just' : '') + '" data-i="' + i + '"' + st + '">' +
+      '<span class="tlab">' + (TYPE_LABEL[b.t] || b.t) + '</span><span class="stamp">✓</span>' +
       '<span class="cond2">' + b.n + '</span>' +
       '<span class="who">' + NM.n[b.who] + '</span>' +
       (NM.e[b.who] ? '<span class="en2">' + NM.e[b.who] + '</span>' : '') +
       '</button>';
   }
-  return '<button class="cell' + col + '" data-i="' + i + '">' +
-    '<span class="num">' + (i + 1) + '</span><span class="cond">' + b.n + '</span></button>';
+  return '<button class="cell' + (done ? ' dead' : '') + '" data-i="' + i + '"' + st + '">' +
+    '<span class="tlab">' + (TYPE_LABEL[b.t] || b.t) + '</span><span class="cond">' + b.n + '</span></button>';
 }
 
 function renderBoard(){
@@ -301,9 +287,8 @@ function nextCard(){
   el('curNm').textContent = nm;
   el('curNm').className = 'nm' + (nm.length > 8 ? ' long' : '');
   el('curEn').textContent = NM.e[cur] || '';
-  el('curNo').textContent = '#' + String(at).padStart(2, '0');
   const ball = el('ball');
-  ball.className = 'ball ' + BALLS[ri(5)];
+  ball.className = 'ball';                                   // 球不带类型色，避免被当成指向某格
   void ball.offsetWidth; ball.classList.add('pop');
 }
 
@@ -319,16 +304,9 @@ function endRound(){
   if (filled >= SLOTS) return finish(true);
   if (!skipped.length) return finish(false);
   const dead = board.filter(b => b.who == null && !skipped.some(h => b.set.has(h))).length;
-  if (dead){
-    el('msg').className = 'msg no';
-    el('msg').textContent = '有 ' + dead + ' 格在剩下的牌里没有候选了 —— 结算';
-    return finish(false);
-  }
-  const n = skipped.length;
-  deck = shuffle(skipped); skipped = []; at = 0; roundNo++;
+  if (dead) return finish(false);
+  deck = shuffle(skipped); skipped = []; at = 0;
   nextCard();
-  el('msg').className = 'msg';
-  el('msg').textContent = '第 ' + (roundNo - 1) + ' 轮结束 —— 跳过的 ' + n + ' 匹重新摇一轮';
 }
 
 /* ---------- 交互 ---------- */
@@ -343,8 +321,7 @@ el('board').addEventListener('click', e => {
     el('msg').className = 'msg';
     el('msg').textContent = '';
     setTimeout(nextCard, 200);
-  } else {                                                    // 不合法 → 抖动 + 记误放
-    wrong++;
+  } else {                                                    // 不合法 → 抖动
     cell.className = cell.className.replace(' no', '') + ' no';
     setTimeout(() => { cell.className = cell.className.replace(' no', ''); }, 380);
     el('msg').className = 'msg no';
@@ -370,21 +347,19 @@ function confetti(n){
   setTimeout(() => { box.innerHTML = ''; }, 4200);
 }
 
+/* 结束**不跳结算页**：棋盘原样留在页面上给玩家回看（哪一格放了哪匹马），
+   只收起摇球的区域、在棋盘下面补一排重开按钮。 */
 function finish(win){
   done = true;
-  el('play').hidden = true; el('over').hidden = false;
-  el('ovScore').textContent = filled;
-  el('ovTx').textContent = win ? '全部填满 —— BINGO！'
-    : filled >= 12 ? '差一点就满了'
-    : filled >= 8  ? '还不错，再摇一盘'
-    : '这盘有点难，换一盘试试';
-  el('ovSub').textContent = '用了 ' + roundNo + ' 轮 ｜ 误放 ' + wrong + ' 次';
-  el('hd').hidden = !win;
+  el('ball').hidden = true; el('bSkip').hidden = true;     // 名片 + 跳过收起
+  el('bNew').hidden = false;                               // 「换一盘」顶在名片原来的位置
+  el('msg').textContent = ''; el('msg').className = 'msg';
+  // 没填满就结束时，把空格淡出 —— 不用文字，棋盘自己说明「这些格子填不上了」
+  if (!win) renderBoard();
   if (win) confetti(70);
 }
 
-el('bAgain').onclick = () => start(false);     // 同一张盘重玩（换副牌）
-el('bNew').onclick = () => start(true);        // 重新组格
+el('bNew').onclick = () => start();            // 重新组格（没有「同盘再来」：一盘只玩一次）
 
 fetch('../assets/data/bingo/cards.json')
   .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
@@ -392,7 +367,7 @@ fetch('../assets/data/bingo/cards.json')
     CARDS = d.cards || [];
     NM = await fetch('../assets/data/bingo/names.json').then(r => r.json());
     if (!CARDS.length) throw new Error('empty');
-    start(true);
+    start();
   })
   .catch(() => {
     el('play').hidden = false;
