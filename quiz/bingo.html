@@ -52,7 +52,10 @@
   .sub{text-align:center;color:var(--muted);font-size:13px;margin:6px 0 16px}
 
   /* ---- 当前这匹：摇出来的球 ---- */
-  .ball{width:186px;height:186px;border-radius:50%;margin:2px auto 12px;position:relative;
+  .stage{display:flex;align-items:center;justify-content:center;gap:20px;margin:2px auto 12px}
+  .side{display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+  .side .hint{font-size:11.5px;color:var(--muted);line-height:1.45}
+  .ball{width:186px;height:186px;border-radius:50%;position:relative;
         background:radial-gradient(circle at 33% 27%,#ffffff 0%,var(--bc1) 42%,var(--bc2) 100%);
         box-shadow:0 10px 0 rgba(44,33,24,.10),0 16px 30px rgba(44,33,24,.18);display:flex;align-items:center;justify-content:center}
   .ball::after{content:"";position:absolute;top:16px;left:30px;width:34px;height:22px;border-radius:50%;
@@ -75,7 +78,9 @@
 
   /* ---- 棋盘 ---- */
   .board{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:4px}
-  @media(max-width:620px){.board{grid-template-columns:repeat(2,1fr);gap:8px}}
+  @media(max-width:620px){.board{grid-template-columns:repeat(2,1fr);gap:8px}
+    .stage{flex-direction:column;gap:12px}
+    .side{align-items:center;text-align:center}}
   .cell{position:relative;min-height:92px;padding:15px 9px 10px;border:2px solid var(--line);border-radius:12px;
         background:var(--paper);color:var(--ink);font:inherit;text-align:center;cursor:pointer;overflow:hidden;
         display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
@@ -99,7 +104,6 @@
   .cell.c3{--c:var(--green)} .cell.c4{--c:var(--gold)}
 
   .actions{margin-top:16px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
-  .actions.right{justify-content:flex-end;margin-top:12px}
   button.b{font:inherit;font-size:14px;font-weight:700;padding:10px 26px;border-radius:99px;cursor:pointer;
         border:2px solid var(--line);background:var(--paper);color:var(--ink);box-shadow:0 4px 0 rgba(44,33,24,.10)}
   button.b:hover{transform:translateY(-1px)}
@@ -138,19 +142,20 @@
 <div class="wrap">
   <a class="back" href="../">← 返回首页</a>
   <h1><span class="cn">赛马</span><span class="bl b">B</span><span class="bl i">I</span><span class="bl n">N</span><span class="bl g">G</span><span class="bl o">O</span></h1>
-  <p class="sub">摇出一匹马 —— 把它放进它满足的那一格</p>
 
   <div id="play" hidden>
-    <div class="ball B" id="ball">
-      <div class="inner">
-        <div class="no" id="curNo">—</div>
-        <div class="nm" id="curNm"></div>
-        <div class="en" id="curEn"></div>
+    <div class="stage">
+      <div class="ball B" id="ball">
+        <div class="inner">
+          <div class="no" id="curNo">—</div>
+          <div class="nm" id="curNm"></div>
+          <div class="en" id="curEn"></div>
+        </div>
       </div>
-    </div>
-
-    <div class="actions right">
-      <button class="b skip" id="bSkip">跳过</button>
+      <div class="side">
+        <button class="b skip" id="bSkip">跳过</button>
+        <div class="hint">这匹想不起来？<br>跳过，攒到下一轮再摇</div>
+      </div>
     </div>
     <div class="msg" id="msg"></div>
 
