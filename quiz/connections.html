@@ -30,62 +30,104 @@
     --shadow:0 6px 0 rgba(44,33,24,.10), 0 12px 26px rgba(44,33,24,.13);
   }
   *{box-sizing:border-box}
+  /* 兜住 hidden：作者样式里的 display（如 .lives{display:flex}）会**覆盖** UA 的
+     [hidden]{display:none}，导致 el(x).hidden = true 静默失效 —— 踩过一次 */
+  [hidden]{display:none !important}
   body{margin:0;color:var(--ink);min-height:100vh;font-size:15px;line-height:1.6;
        font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
        background:var(--cream);
-       background-image:radial-gradient(rgba(47,111,219,.06) 2px,transparent 2px),
-                        radial-gradient(rgba(227,61,61,.05) 2px,transparent 2px);
-       background-size:34px 34px,34px 34px;background-position:0 0,17px 17px}
-  .wrap{max-width:900px;margin:0 auto;padding:20px 16px 70px}
-  .back{display:inline-block;font-size:12.5px;color:var(--muted);text-decoration:none;margin-bottom:12px;letter-spacing:.04em}
-  .back:hover{color:var(--red)}
-  h1{text-align:center;margin:4px 0 2px;font-family:"Songti SC","SimSun",Georgia,serif;
-     font-size:28px;letter-spacing:.12em}
+       background-image:
+         radial-gradient(circle at 12% 6%, rgba(47,111,219,.13), transparent 40%),
+         radial-gradient(circle at 90% 4%, rgba(227,61,61,.11), transparent 38%),
+         radial-gradient(circle at 50% 102%, rgba(240,172,30,.14), transparent 44%),
+         radial-gradient(rgba(44,33,24,.045) 1.6px, transparent 1.6px);
+       background-size:auto,auto,auto,26px 26px;
+       background-attachment:fixed,fixed,fixed,fixed}
+  .wrap{max-width:900px;margin:0 auto;padding:22px 16px 70px}
+  .back{display:inline-block;font-size:12.5px;color:var(--muted);text-decoration:none;margin-bottom:12px;letter-spacing:.04em;
+        transition:color .15s,transform .15s}
+  .back:hover{color:var(--red);transform:translateX(-2px)}
+  h1{text-align:center;margin:6px 0 0;font-family:"Songti SC","SimSun",Georgia,serif;
+     font-size:30px;letter-spacing:.18em;font-weight:700}
+  h1::after{content:"";display:block;width:60px;height:3px;border-radius:99px;margin:9px auto 0;
+     background:linear-gradient(90deg,var(--blue),var(--purple),var(--gold),var(--green))}
 
   /* 难度（分段控件） + 容错 */
-  .bar{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin:16px 0 4px}
+  .bar{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin:18px 0 4px}
   .seg{display:inline-flex;border:2px solid var(--line);border-radius:99px;overflow:hidden;
-       background:var(--paper);box-shadow:0 3px 0 rgba(44,33,24,.08)}
+       background:linear-gradient(180deg,#fffdf8,#fbf3e5);
+       box-shadow:0 4px 0 rgba(44,33,24,.09),inset 0 1px 0 #fff}
   .diff{font:inherit;font-size:12.5px;font-weight:700;padding:6px 17px;cursor:pointer;border:0;
-        background:transparent;color:var(--muted);transition:background .15s,color .15s}
+        background:transparent;color:var(--muted);transition:background .18s,color .18s}
   .diff + .diff{border-left:2px solid var(--line)}
-  .diff.on{background:var(--ink);color:#fff}
-  .lives{display:flex;gap:5px}
-  .lives i{width:9px;height:9px;border-radius:50%;background:var(--ink);opacity:.75;
-           transition:opacity .2s,background .2s}
-  .lives i.gone{background:var(--red);opacity:.22}
-  .msg{text-align:center;font-size:13.5px;color:var(--muted);min-height:22px;margin:8px 0 0}
+  .diff:hover{color:var(--ink)}
+  .diff.on{background:linear-gradient(180deg,#3d2f22,#241a11);color:#fff;text-shadow:0 1px 0 rgba(0,0,0,.25)}
+  /* 进场的选择态：三档放大居中，一档都还没选中 */
+  body.picking .bar{margin-top:54px}
+  body.picking .seg{box-shadow:0 5px 0 rgba(44,33,24,.13)}
+  body.picking .diff{font-size:15px;padding:11px 26px}
+  /* Hard 档的容错：5 个点，用掉一个就变成红色空心 */
+  .lives{display:flex;gap:8px;justify-content:center;margin:16px 0 2px}
+  .lives i{width:14px;height:14px;border-radius:50%;background:var(--ink);
+           box-shadow:0 2px 0 rgba(44,33,24,.18);transition:background .2s,box-shadow .2s}
+  .lives i.low{background:var(--red)}    /* 只剩 ≤2 次时剩下的点变红预警 */
+  .lives i.gone{background:transparent;border:2px solid var(--red);opacity:.6;box-shadow:none}
+  .lives.hit{animation:sh .42s}          /* 掉一次机会时整排抖一下，避免玩家察觉不到 */
+
+  /* 即时反馈：做成醒目的胶囊并 pop 进场 —— §0.1 里唯一保留"说话"的地方 */
+  .msg{display:flex;justify-content:center;align-items:center;min-height:40px;margin:10px 0 0;
+       font-size:13.5px;color:var(--muted);text-align:center}
+  .msg b{display:inline-block;font-size:16px;font-weight:700;padding:7px 21px;border-radius:99px;color:#fff;
+       animation:pop .32s cubic-bezier(.2,1.5,.4,1)}
+  .msg.no b{background:var(--red);box-shadow:0 3px 0 #a82424}
+  .msg.near b{background:var(--gold);color:#3a2a06;box-shadow:0 3px 0 #b57d09}
   .msg.no{color:var(--red);font-weight:700}
 
+  /* 棋盘坐在一块浅色面板上 —— 给页面做出层次，也让近白的格子能"浮"起来 */
+  .panel{background:rgba(255,253,248,.66);border:1px solid rgba(236,223,201,.85);border-radius:20px;
+         padding:14px 14px 16px;margin-top:12px;
+         box-shadow:inset 0 1px 0 rgba(255,255,255,.9),0 12px 32px rgba(44,33,24,.07)}
+
   /* 进度条：四段对应四组，解开一段才染上该组的颜色（未解开保持中性，不泄露分组） */
-  .prog{display:flex;gap:6px;justify-content:center;margin:12px 0 2px}
-  .prog i{width:44px;height:6px;border-radius:99px;background:var(--line);transition:background .3s}
-  .prog i.on{background:var(--c)}
+  .prog{display:flex;gap:6px;justify-content:center;margin:6px 0 2px}
+  .prog i{width:46px;height:7px;border-radius:99px;
+          background:linear-gradient(180deg,rgba(44,33,24,.10),rgba(44,33,24,.04));
+          box-shadow:inset 0 1px 2px rgba(44,33,24,.10);transition:background .3s,box-shadow .3s}
+  .prog i.on{background:linear-gradient(180deg,rgba(255,255,255,.34),rgba(0,0,0,.10)),var(--c);
+             box-shadow:0 2px 0 rgba(44,33,24,.12)}
 
   /* 已解开的组 */
-  .grp{border-radius:13px;padding:9px 14px;margin:8px 0;color:#fff;text-align:center;
-       background:linear-gradient(180deg,rgba(255,255,255,.18),rgba(0,0,0,.12)),var(--c);
-       box-shadow:0 4px 0 rgba(44,33,24,.16);animation:in .34s ease-out}
-  @keyframes in{0%{transform:translateY(-6px) scale(.97);opacity:0}100%{transform:none;opacity:1}}
-  .grp .gt{font-size:12.5px;font-weight:700;letter-spacing:.03em;opacity:.92}
+  .grp{position:relative;border-radius:14px;padding:10px 14px;margin:9px 0;color:#fff;text-align:center;
+       overflow:hidden;
+       background:linear-gradient(180deg,rgba(255,255,255,.20),rgba(0,0,0,.14)),var(--c);
+       box-shadow:0 4px 0 rgba(44,33,24,.17),inset 0 1px 0 rgba(255,255,255,.28);
+       animation:in .38s cubic-bezier(.2,1.2,.4,1)}
+  .grp::after{content:"";position:absolute;inset:0 0 auto;height:42%;
+       background:linear-gradient(180deg,rgba(255,255,255,.16),transparent);pointer-events:none}
+  @keyframes in{0%{transform:translateY(-8px) scale(.96);opacity:0}100%{transform:none;opacity:1}}
+  .grp .gt{font-size:12.5px;font-weight:700;letter-spacing:.03em;opacity:.94}
   .grp .gm{font-size:16px;font-weight:700;line-height:1.35;margin-top:1px}
-  .grp.lost{filter:grayscale(.5);opacity:.7;box-shadow:none}
+  .grp.lost{filter:grayscale(.55);opacity:.68;box-shadow:none}
 
   /* 棋盘 */
   .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
   @media(max-width:560px){.grid{grid-template-columns:repeat(2,1fr);gap:7px}}
-  .tile{position:relative;min-height:80px;padding:12px 8px;border:2px solid var(--line);border-radius:12px;
-        background:linear-gradient(180deg,#fffdf8 0%,#fdf5e7 100%);
+  .tile{position:relative;min-height:82px;padding:13px 9px;border:2px solid var(--line);border-radius:15px;
+        background:linear-gradient(180deg,#fffefb 0%,#fdf6ea 100%);
         color:var(--ink);font:inherit;text-align:center;cursor:pointer;overflow:hidden;
         display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
-        box-shadow:0 4px 0 rgba(44,33,24,.09);
-        transition:transform .09s,border-color .12s,opacity .15s,box-shadow .12s}
+        box-shadow:0 4px 0 rgba(44,33,24,.09),inset 0 1px 0 #fff;
+        transition:transform .1s,border-color .14s,opacity .15s,box-shadow .14s}
   .tile .jp{font-size:15px;font-weight:700;line-height:1.24;word-break:break-all}
   .tile .en{font-size:10px;color:var(--muted);line-height:1.2;word-break:break-word}
   .tile::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;
-        background:var(--line);transition:background .12s}
-  .tile:hover{transform:translateY(-2px);border-color:var(--ink);box-shadow:0 6px 0 rgba(44,33,24,.10)}
+        background:var(--line);transition:background .14s}
+  .tile:hover{transform:translateY(-3px);border-color:var(--ink);box-shadow:0 8px 0 rgba(44,33,24,.10)}
   .tile:hover::before{background:var(--ink)}
+  /* 入场：只在开局时播一次（render() 每次点击都会重建格子，所以靠 #grid.enter 控制） */
+  #grid.enter .tile{animation:tin .4s cubic-bezier(.2,1.1,.4,1) both;
+        animation-delay:calc(var(--i,0) * 22ms)}
+  @keyframes tin{0%{transform:translateY(10px) scale(.94);opacity:0}100%{transform:none;opacity:1}}
   .tile.sel{background:var(--ink);border-color:var(--ink);color:#fff;
         box-shadow:0 4px 0 rgba(44,33,24,.32)}
   .tile.sel::before{background:var(--gold)}
@@ -99,13 +141,34 @@
   @keyframes sh{0%,100%{transform:translateX(0)}20%{transform:translateX(-7px)}
                 40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(3px)}}
 
-  .actions{margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
-  button.b{font:inherit;font-size:14px;font-weight:700;padding:10px 26px;border-radius:99px;cursor:pointer;
-        border:2px solid var(--line);background:var(--paper);color:var(--ink);box-shadow:0 4px 0 rgba(44,33,24,.10)}
-  button.b:hover:not(:disabled){transform:translateY(-1px)}
+  .actions{margin-top:18px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;align-items:center}
+  button.b{font:inherit;font-size:14px;font-weight:700;padding:11px 26px;border-radius:99px;cursor:pointer;
+        border:2px solid var(--line);color:var(--ink);
+        background:linear-gradient(180deg,#fffdf8,#fbf3e5);
+        box-shadow:0 4px 0 rgba(44,33,24,.10),inset 0 1px 0 #fff;
+        transition:transform .1s,box-shadow .12s,border-color .12s}
+  button.b:hover:not(:disabled){transform:translateY(-2px);border-color:var(--ink);box-shadow:0 6px 0 rgba(44,33,24,.11)}
   button.b:active:not(:disabled){transform:translateY(2px);box-shadow:0 1px 0 rgba(44,33,24,.10)}
   button.b:disabled{opacity:.42;cursor:default}
-  button.b.pri{background:var(--ink);border-color:var(--ink);color:#fff;box-shadow:0 4px 0 rgba(44,33,24,.35)}
+  button.b.pri{background:linear-gradient(180deg,#453528,#241a11);border-color:#241a11;color:#fff;
+        box-shadow:0 4px 0 rgba(44,33,24,.38),inset 0 1px 0 rgba(255,255,255,.16)}
+  button.b.pri:hover:not(:disabled){border-color:#241a11;box-shadow:0 6px 0 rgba(44,33,24,.38)}
+  /* 投降：压低存在感（确认走弹窗） */
+  button.b.give{font-size:12.5px;padding:8px 18px;color:var(--muted)}
+
+  /* 投降确认弹窗 */
+  .modal{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;
+         padding:20px;background:rgba(44,33,24,.42);backdrop-filter:blur(3px);
+         animation:fade .18s ease-out}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  .sheet{width:100%;max-width:330px;padding:22px 22px 18px;text-align:center;border-radius:20px;
+         background:linear-gradient(180deg,#fffdf8,#fbf3e5);
+         box-shadow:0 22px 54px rgba(44,33,24,.30),inset 0 1px 0 #fff;
+         animation:sheet .26s cubic-bezier(.2,1.3,.4,1)}
+  @keyframes sheet{from{transform:translateY(14px) scale(.94);opacity:0}to{transform:none;opacity:1}}
+  .sheet .mt{font-size:16.5px;font-weight:700;margin:0 0 18px;letter-spacing:.04em}
+  .sheet .mrow{display:flex;gap:10px}
+  .sheet .mrow .b{flex:1;padding:11px 0}
 
   #confetti{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:9}
   #confetti i{position:absolute;top:-14px;width:9px;height:14px;border-radius:2px;opacity:.95;
@@ -125,21 +188,35 @@
       <button class="diff" data-d="normal">Normal</button>
       <button class="diff" data-d="hard">Hard</button>
     </div>
-    <span class="lives" id="lives" hidden></span>
   </div>
   <div class="msg" id="msg"></div>
 
   <div id="board" hidden>
-    <div class="prog" id="prog"></div>
-    <div id="solved"></div>
-    <div class="grid" id="grid"></div>
-    <div class="actions">
-      <button class="b" id="bClear">清除选择</button>
-      <button class="b pri" id="bGo" disabled>提交</button>
-      <button class="b" id="bNew" hidden>换一盘</button>
+    <div class="panel">
+      <div class="prog" id="prog"></div>
+      <div id="solved"></div>
+      <div class="lives" id="lives" hidden></div>
+      <div class="grid" id="grid"></div>
+      <div class="actions">
+        <button class="b" id="bClear">清除选择</button>
+        <button class="b pri" id="bGo" disabled>提交</button>
+        <button class="b give" id="bGive">投降</button>
+        <button class="b" id="bNew" hidden>换一盘</button>
+      </div>
     </div>
   </div>
   <div class="msg" id="load">载入题库…</div>
+</div>
+
+<!-- 投降确认 -->
+<div class="modal" id="modal" hidden>
+  <div class="sheet">
+    <p class="mt">确定投降？</p>
+    <div class="mrow">
+      <button class="b" id="mNo">取消</button>
+      <button class="b pri" id="mYes">确定</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -158,7 +235,8 @@ const GCOLOR = ['#2f6fdb', '#22a35e', '#f0ac1e', '#8b5cf6'];   // 四组的身�
 let CARDS = [], NM = { n: [], e: [] };
 /* order：棋盘上格子的**固定顺序**。只在开局打乱一次，解开一组就把那 4 匹摘掉，
    之后顺序不再变 —— 否则每次点击触发 render() 都会重排，玩家点一下棋盘就跳一次。 */
-let diff = 'normal', groups = [], solved = [], sel = [], order = [], lives = 0, done = false;
+let diff = 'easy', groups = [], solved = [], sel = [], order = [], lives = 0, done = false;
+let lastTry = '';   // 上一次判错的组合（排序后的键），用来禁用重复提交
 
 const el = id => document.getElementById(id);
 const ri = n => Math.random() * n | 0;
@@ -222,20 +300,27 @@ function render(){
     return;
   }
   const full = sel.length === 4;
-  el('grid').innerHTML = order.map(h => {
+  el('grid').innerHTML = order.map((h, i) => {
     const k = sel.indexOf(h);
-    return '<button class="tile' + (k >= 0 ? ' sel' : (full ? ' dim' : '')) + '" data-h="' + h + '">' +
+    return '<button class="tile' + (k >= 0 ? ' sel' : (full ? ' dim' : '')) +
+      '" data-h="' + h + '" style="--i:' + i + '">' +
       '<span class="jp">' + NM.n[h] + '</span>' +
       (NM.e[h] ? '<span class="en">' + NM.e[h] + '</span>' : '') +
       (k >= 0 ? '<span class="ord">' + (k + 1) + '</span>' : '') +
     '</button>';
   }).join('');
-  el('bGo').disabled = sel.length !== 4;
+  // 选择没变就别让再提交一次 —— 刚判过错的组合，手快连点会白掉一条命
+  el('bGo').disabled = sel.length !== 4 || sel.slice().sort().join() === lastTry;
+  renderLives();
+}
+
+/* 单独抽出来：猜错时只需刷新容错点，不必整盘重绘（重绘会打断抖动，也没必要） */
+function renderLives(){
   el('lives').hidden = !MAX_LIVES[diff];
-  if (MAX_LIVES[diff]){
-    el('lives').innerHTML = Array.from({ length: MAX_LIVES[diff] },
-      (_, i) => '<i class="' + (i < lives ? 'gone' : '') + '"></i>').join('');
-  }
+  if (!MAX_LIVES[diff]) return;
+  const left = MAX_LIVES[diff] - lives;
+  el('lives').innerHTML = Array.from({ length: MAX_LIVES[diff] },
+    (_, i) => '<i class="' + (i < lives ? 'gone' : (left <= 2 ? 'low' : '')) + '"></i>').join('');
 }
 
 /* ---------- 交互 ---------- */
@@ -244,6 +329,7 @@ el('grid').addEventListener('click', e => {
   const h = +t.dataset.h;
   if (sel.includes(h)) sel = sel.filter(x => x !== h);
   else if (sel.length < 4) sel.push(h);
+  el('msg').className = 'msg'; el('msg').innerHTML = '';   // 玩家重新动手了，上一条反馈收掉
   render();
 });
 
@@ -257,21 +343,28 @@ el('bGo').onclick = () => {
     hit.hs = sel.slice();                    // 按玩家提交的顺序展示（成员等价于原组）
     solved.push(hit); sel = [];
     order = order.filter(h => !hit.hs.includes(h));   // 摘掉这 4 匹，其余格子**保持原位**
-    el('msg').textContent = '';
+    el('msg').innerHTML = '';
     render();
     if (solved.length === 4) finish(true);
     return;
   }
   // 错了：记一次；「差一匹」是 Connections 的招牌反馈（说明这次提交差在哪）
-  if (MAX_LIVES[diff]) lives++;
+  if (MAX_LIVES[diff]){                        // 掉机会时整排抖一下
+    lives++;
+    el('lives').classList.add('hit');
+    setTimeout(() => el('lives').classList.remove('hit'), 460);
+  }
   const near = groups.some(g => !solved.includes(g) && sel.filter(h => g.hs.includes(h)).length === 3);
-  el('msg').className = 'msg no';
-  el('msg').textContent = near ? '差一匹' : '不是一组';
+  el('msg').className = near ? 'msg near' : 'msg no';
+  el('msg').innerHTML = near ? '<b>差一匹就对了！</b>' : '<b>错误</b>';
   document.querySelectorAll('.tile.sel').forEach(t => {
     t.classList.add('bad'); setTimeout(() => t.classList.remove('bad'), 380);
   });
   if (MAX_LIVES[diff] && lives >= MAX_LIVES[diff]) return finish(false);
-  setTimeout(() => { sel = []; render(); }, 620);
+  // **不清空选择**：玩家多半只想换掉其中一匹，让他重新选四个是折磨
+  lastTry = sel.slice().sort().join();
+  renderLives();
+  el('bGo').disabled = true;
 };
 
 function finish(win){
@@ -279,9 +372,10 @@ function finish(win){
   // 输了也把答案亮出来（标 late ⇒ 渲染时压暗，和玩家自己解开的组区分开）
   if (!win) groups.filter(g => !solved.includes(g)).forEach(g => { g.late = true; solved.push(g); });
   el('msg').className = 'msg';
-  el('msg').textContent = '';
+  el('msg').innerHTML = '';
   sel = []; render();
-  el('bClear').hidden = true; el('bGo').hidden = true; el('bNew').hidden = false;
+  el('bClear').hidden = true; el('bGo').hidden = true; el('bGive').hidden = true;
+  el('bNew').hidden = false; closeModal();
   if (win) confetti(70);
 }
 
@@ -296,19 +390,41 @@ function confetti(n){
   setTimeout(() => { box.innerHTML = ''; }, 4200);
 }
 
+/* started：进场时是「选难度」状态（started=false，没有开局，也不预先选中任何一档），
+   玩家点了某一档才开局。之后三档按钮常驻，用于中途换难度。 */
+let started = false;
+function syncDiff(){
+  document.querySelectorAll('.diff').forEach(b =>
+    b.classList.toggle('on', started && b.dataset.d === diff));
+}
+
 function start(){
   const g = build();
   if (!g){ el('load').textContent = '组题失败，刷新重试'; return; }
-  groups = g; solved = []; sel = []; lives = 0; done = false;
+  started = true;
+  document.body.classList.remove('picking');
+  groups = g; solved = []; sel = []; lives = 0; done = false; lastTry = '';
   order = shuffle(g.flatMap(x => x.hs));      // 开局打乱一次，之后不再重排
   el('load').hidden = true; el('board').hidden = false;
   el('bClear').hidden = false; el('bGo').hidden = false; el('bNew').hidden = true;
-  document.querySelectorAll('.diff').forEach(b => b.classList.toggle('on', b.dataset.d === diff));
+  el('bGive').hidden = false; closeModal();
+  syncDiff();
   render();
+  // 入场动画只在开局播一次：render() 每次点击都会重建格子，动画挂在 #grid.enter 上才不会反复重播
+  el('grid').classList.add('enter');
+  setTimeout(() => el('grid').classList.remove('enter'), 900);
 }
 
 document.querySelectorAll('.diff').forEach(b => b.onclick = () => { diff = b.dataset.d; start(); });
 el('bNew').onclick = () => start();
+
+/* 投降：弹窗二次确认。直接认输太容易被误触，而这一局就白玩了。 */
+function closeModal(){ el('modal').hidden = true; }
+el('bGive').onclick = () => { if (!done) el('modal').hidden = false; };
+el('mNo').onclick = closeModal;
+el('mYes').onclick = () => { closeModal(); finish(false); };   // 投降 = 按失败收场：答案亮出来
+el('modal').onclick = e => { if (e.target === el('modal')) closeModal(); };   // 点遮罩也关
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
 /* 出错时必须说清是哪一步：fetch 失败 / HTTP 状态 / 组题或渲染抛异常，
    否则一律显示「载入失败」，真因被吞掉，没法排查。 */
@@ -322,7 +438,10 @@ Promise.all([
 ]).then(([d, nm]) => {
   CARDS = d.cards || []; NM = nm;
   if (!CARDS.length) throw new Error('cards.json 里没有卡片');
-  start();
+  // **不自动开局**：进场停在「选难度」状态，由玩家点某一档才开始
+  el('load').hidden = true;
+  document.body.classList.add('picking');
+  syncDiff();
 }).catch(e => {
   console.error('[赛马连线] 启动失败：', e);
   el('load').className = 'msg no';

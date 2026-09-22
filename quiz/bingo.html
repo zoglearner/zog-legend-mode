@@ -34,6 +34,9 @@
     --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   }
   *{box-sizing:border-box}
+  /* 兜住 hidden：作者样式里的 display（如 .ball{display:flex}）会**覆盖** UA 的
+     [hidden]{display:none}，导致 el(x).hidden = true 静默失效 —— 结束收球就踩过这个坑 */
+  [hidden]{display:none !important}
   body{margin:0;color:var(--ink);min-height:100vh;font-size:15px;line-height:1.6;
        font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
        background:var(--cream);
