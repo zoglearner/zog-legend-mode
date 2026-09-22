@@ -16,7 +16,8 @@
   复合是既往小游戏（Bingo / 找内鬼 / 猜猜我是谁）都没有的，本作第一次启用 conds 长度 2。
 
   数据（纯静态，fetch 即可）
-    ../assets/data/connections/cards.json   主题卡（单条件 + 复合），h 按名气降序
+    ../assets/data/connections/cards.json   主题卡（单条件 + 复合 + 称号），h 按名气降序
+                                            称号卡带 sub ⇒ 揭示时「称号作主标题、规则文本作副标题」
     ../assets/data/connections/names.json   马 ID → 日文名 / 英文名 / 名气
 
   配色纪律（§0.2）：一种颜色只准一种含义。
@@ -106,6 +107,11 @@
        background:linear-gradient(180deg,rgba(255,255,255,.16),transparent);pointer-events:none}
   @keyframes in{0%{transform:translateY(-8px) scale(.96);opacity:0}100%{transform:none;opacity:1}}
   .grp .gt{font-size:12.5px;font-weight:700;letter-spacing:.03em;opacity:.94}
+  /* 称号卡：gt = 称号（主标题），gs = 规则文本（副标题）
+     —— 裁定见 tools/条件与称号规则.md §0.1：规则文本是称号的注解，不是谜面 */
+  .grp.titled .gt{font-size:15.5px;letter-spacing:.06em}
+  .grp .gs{font-size:11px;line-height:1.42;opacity:.8;margin-top:2px}
+  .grp.titled .gm{margin-top:3px}
   .grp .gm{font-size:16px;font-weight:700;line-height:1.35;margin-top:1px}
   .grp.lost{filter:grayscale(.55);opacity:.68;box-shadow:none}
 
@@ -230,6 +236,12 @@ const EASY_TYPES = new Set(['sire','dsire','owner','breeder','coat','gen','cente
    纯随机抽必然 ≈3.7/4 组都是复合，而 Easy 是给休闲玩家的档位。
    Normal 与 Hard 用**完全相同**的题池（只差容错次数），与参照站一致。 */
 const EASY_CONF = 0.10, EASY_MAX_CMP = 2, MAX_LIVES = { hard: 5 }, PICK_TOP = 10;
+/* TITLE_P：一盘里出现「称号」组的概率。
+   称号卡只有 22 张（普通卡 5000+），纯随机抽一盘约 1.7% 才碰上 —— 而它们恰恰是最精致的题
+   （三冠馬・東京巧者・東京芝２４００ｍのＧ１勝馬…）。所以按概率**主动塞一组**。
+   称号卡的 conds[0].t = 'title'，是独立类型 ⇒ "四组主类型互不相同"天然满足。
+   Easy 不出（EASY_TYPES 白名单不含 title）。 */
+const TITLE_P = 0.35;
 const GCOLOR = ['#2f6fdb', '#22a35e', '#f0ac1e', '#8b5cf6'];   // 四组的身份色（红色留给"错了"）
 
 let CARDS = [], NM = { n: [], e: [] };
@@ -255,9 +267,15 @@ function confusability(q){
 function build(){
   const easy = diff === 'easy';
   const pool = easy ? CARDS.filter(c => c.conds.every(k => EASY_TYPES.has(k.t))) : CARDS;
+  const tpool = easy ? [] : CARDS.filter(c => c.conds[0].t === 'title');
   for (let t = 0; t < 4000; t++){
     const q = [];
     const seen = new Set();
+    // 先按概率塞一组「称号」；它凑不够独占成员时，下面的 excl 检查会把这一盘整个丢掉重来
+    if (tpool.length && Math.random() < TITLE_P){
+      const tc = pick(tpool);
+      q.push(tc); seen.add(tc.conds[0].t);
+    }
     let guard = 0;
     while (q.length < 4 && guard++ < 200){          // 四个不同「主类型」，题目才有变化
       const c = pick(pool);
@@ -291,8 +309,10 @@ function render(){
   el('prog').innerHTML = groups.map(g => '<i class="' + (solved.includes(g) ? 'on' : '') +
     '" style="--c:' + g.color + '"></i>').join('');
   el('solved').innerHTML = solved.map(g =>
-    '<div class="grp' + (g.late ? ' lost' : '') + '" style="--c:' + g.color + '">' +
+    '<div class="grp' + (g.late ? ' lost' : '') + (g.card.sub ? ' titled' : '') +
+        '" style="--c:' + g.color + '">' +
       '<div class="gt">' + g.card.n + '</div>' +
+      (g.card.sub ? '<div class="gs">' + g.card.sub + '</div>' : '') +
       '<div class="gm">' + g.hs.map(h => NM.n[h]).join(' ／ ') + '</div>' +
     '</div>').join('');
   if (done){
