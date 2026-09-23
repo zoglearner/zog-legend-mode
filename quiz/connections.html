@@ -18,166 +18,192 @@
   数据（纯静态，fetch 即可）
     ../assets/data/connections/cards.json   主题卡（单条件 + 复合 + 称号），h 按名气降序
                                             称号卡带 sub ⇒ 揭示时「称号作主标题、规则文本作副标题」
-    ../assets/data/connections/names.json   马 ID → 日文名 / 英文名 / 名气
+    ../assets/data/connections/names.json   马 ID → 日文名 / 英文名（`f` 名气字段仍在下发，但**本作不再使用**）
 
   配色纪律（§0.2）：一种颜色只准一种含义。
     未解开 ⇒ 一律中性（颜色若按组区分就等于把答案画出来了）
     解开后 ⇒ 颜色 = 该组的身份；红色只留给「错了」
+
+  视觉（2026-09-24 第 5 版 · ✅ 已定）：**雾霾青灰 × 蜜橙**
+    雾霾青灰底 + 两团雾状光晕（青灰·淡紫）+ 白玻璃面板（backdrop blur）。眉题用蜜橙点缀。
+    无衬线（SF / Inter 系）；选中格/主按钮＝墨黑填充反白；解开的组＝白玻璃卡 + 左侧色条 + 组名用该组色。
+    组色＝玫红/天蓝/琥珀/紫，**整页不含绿色**。
+    ⚠ 姊妹页对照：bingo＝暖米黄（亮·暖）｜找内鬼＝暗青绿（暗·冷）｜首页＝白+墨绿；
+      前几版（石墨+靛蓝／紫罗兰极光／淡紫晨光）依次被判"太像找内鬼"或被换掉，
+      ⇒ 最终取"冷灰青底 + 一点蜜橙"；📦 淡紫晨光那套已存档给后续小游戏（见小游戏设计方案.md）。
 -->
 <style>
+  /* ── 设计 token（**雾霾青灰底 × 蜜橙 accent** ｜2026-09-24 第 5 版 · ✅ 已定）────
+     底色＝候选①「雾霾青灰」（冷调、安静、明度偏亮），accent＝候选②「奶油杏」的蜜橙。
+     姊妹页对照：bingo＝暖米黄（亮·暖）｜找内鬼＝暗青绿（暗·冷）｜首页＝白+墨绿
+       ⇒ 本页＝冷灰青底 + 一点蜜橙，色温与明度都错开，且**整页不含绿色**。
+     📦 第 4 版「淡紫晨光 × 白玻璃」**存档留给后续小游戏**
+       （--bg #eeeaf8／光晕 紫 rgba(139,92,246,.30)+蓝+玫红／accent 紫／--btnfill #241e40）
+       —— 见 tools/小游戏设计方案.md「配色备选」一节。
+     一种颜色只准一种含义（见页头注释）：
+       未解开 ⇒ 一律中性 ｜ 解开后 ⇒ 该组色 ｜ 红色只留给「错了」
+     ⚠ 组色是"浅底深版"，JS 用 `var(--g1)` 注入 ⇒ 换主题一处生效。                */
   :root{
-    --cream:#fff5e4; --paper:#fffdf8; --ink:#2c2118; --muted:#9b8a74; --line:#ecdfc9;
-    --red:#e33d3d; --gold:#f0ac1e; --blue:#2f6fdb; --green:#22a35e; --purple:#8b5cf6;
-    --shadow:0 6px 0 rgba(44,33,24,.10), 0 12px 26px rgba(44,33,24,.13);
+    --bg:#e7ecef;                                 /* 雾霾青灰 */
+    /* 玻璃：卡片/按钮＝半透明白 + 背景模糊，让背后的光晕透上来 */
+    --surface:rgba(255,255,255,.74); --surface2:rgba(255,255,255,.58);
+    --chip:rgba(255,255,255,.94);                 /* 选中态（分段控件／浮起的小片）*/
+    --ink:#1e2a33; --sub:#5f707b;
+    --line:rgba(30,42,51,.13); --line2:rgba(30,42,51,.08);
+    --sh1:0 1px 2px rgba(30,42,51,.08);
+    --sh2:0 20px 44px -22px rgba(30,42,51,.34);
+    --red:#e11d48;
+    --near-bg:rgba(217,119,6,.15); --near-ink:#b45309;
+    --no-bg:rgba(225,29,72,.12);   --no-ink:#e11d48;
+    --accent:#c2751b;                             /* 眉题＝奶油杏的蜜橙（只此一处用）*/
+    /* 浅底 ⇒ 主按钮与选中格用墨黑填充（反白） */
+    --btnfill:#22303a; --onbtn:#fff;
+    /* 四组色：玫红・天蓝・琥珀・紫 —— 刻意避开绿色系 */
+    --g1:#db2777; --g2:#0284c7; --g3:#b45309; --g4:#7c3aed;
+    --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
   }
   *{box-sizing:border-box}
   /* 兜住 hidden：作者样式里的 display（如 .lives{display:flex}）会**覆盖** UA 的
      [hidden]{display:none}，导致 el(x).hidden = true 静默失效 —— 踩过一次 */
   [hidden]{display:none !important}
-  body{margin:0;color:var(--ink);min-height:100vh;font-size:15px;line-height:1.6;
-       font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
-       background:var(--cream);
+  body{margin:0;color:var(--ink);min-height:100vh;font-size:15px;line-height:1.6;font-family:var(--sans);
+       background:var(--bg);
+       /* 雾：青灰（左上，主）＋淡紫（右下）—— 固定不随滚动，整页只此一处彩色 */
        background-image:
-         radial-gradient(circle at 12% 6%, rgba(47,111,219,.13), transparent 40%),
-         radial-gradient(circle at 90% 4%, rgba(227,61,61,.11), transparent 38%),
-         radial-gradient(circle at 50% 102%, rgba(240,172,30,.14), transparent 44%),
-         radial-gradient(rgba(44,33,24,.045) 1.6px, transparent 1.6px);
-       background-size:auto,auto,auto,26px 26px;
-       background-attachment:fixed,fixed,fixed,fixed}
-  .wrap{max-width:900px;margin:0 auto;padding:22px 16px 70px}
-  .back{display:inline-block;font-size:12.5px;color:var(--muted);text-decoration:none;margin-bottom:12px;letter-spacing:.04em;
-        transition:color .15s,transform .15s}
-  .back:hover{color:var(--red);transform:translateX(-2px)}
-  h1{text-align:center;margin:6px 0 0;font-family:"Songti SC","SimSun",Georgia,serif;
-     font-size:30px;letter-spacing:.18em;font-weight:700}
-  h1::after{content:"";display:block;width:60px;height:3px;border-radius:99px;margin:9px auto 0;
-     background:linear-gradient(90deg,var(--blue),var(--purple),var(--gold),var(--green))}
+         radial-gradient(90% 60% at 8% -14%, rgba(112,150,170,.34), transparent 62%),
+         radial-gradient(85% 60% at 78% 108%, rgba(120,120,175,.20), transparent 62%);
+       background-attachment:fixed}
+  .wrap{max-width:880px;margin:0 auto;padding:20px 18px 72px}
+  .back{display:inline-block;font-size:12.5px;color:var(--sub);text-decoration:none;transition:color .15s}
+  .back:hover{color:var(--ink)}
+  /* ── 页头：无装饰线，靠字号/字重/留白建立层级 ─────────────────── */
+  .masthead{padding:6px 0 2px}
+  .masthead .eyebrow{font-size:11px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;
+     color:var(--accent)}   /* 蜜橙：整页唯一一处"暖色点缀"（不参与组色语义）*/
+  h1{margin:7px 0 0;font-size:34px;line-height:1.12;font-weight:700;letter-spacing:-.02em}
+  .masthead .meta{margin-top:9px;font-size:13px;color:var(--sub)}
 
-  /* 难度（分段控件） + 容错 */
-  .bar{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin:18px 0 4px}
-  .seg{display:inline-flex;border:2px solid var(--line);border-radius:99px;overflow:hidden;
-       background:linear-gradient(180deg,#fffdf8,#fbf3e5);
-       box-shadow:0 4px 0 rgba(44,33,24,.09),inset 0 1px 0 #fff}
-  .diff{font:inherit;font-size:12.5px;font-weight:700;padding:6px 17px;cursor:pointer;border:0;
-        background:transparent;color:var(--muted);transition:background .18s,color .18s}
-  .diff + .diff{border-left:2px solid var(--line)}
+  /* ── 难度：胶囊分段控件（只有 简单／普通／难；难度只在"难"上挂一个小注）── */
+  .bar{display:flex;align-items:center;justify-content:center;margin:18px 0 0}
+  .seg{display:inline-flex;gap:4px;padding:4px;border-radius:13px;background:var(--line2)}
+  .diff{font:inherit;font-size:13px;font-weight:600;cursor:pointer;border:0;border-radius:10px;
+        background:transparent;color:var(--sub);padding:9px 20px;
+        display:inline-flex;align-items:baseline;gap:5px;
+        transition:background .18s,color .18s,box-shadow .18s}
+  .diff .dnote{font-size:10px;font-weight:500;opacity:.65;letter-spacing:.02em}
   .diff:hover{color:var(--ink)}
-  .diff.on{background:linear-gradient(180deg,#3d2f22,#241a11);color:#fff;text-shadow:0 1px 0 rgba(0,0,0,.25)}
-  /* 进场的选择态：三档放大居中，一档都还没选中 */
-  body.picking .bar{margin-top:54px}
-  body.picking .seg{box-shadow:0 5px 0 rgba(44,33,24,.13)}
-  body.picking .diff{font-size:15px;padding:11px 26px}
-  /* Hard 档的容错：5 个点，用掉一个就变成红色空心 */
-  .lives{display:flex;gap:8px;justify-content:center;margin:16px 0 2px}
-  .lives i{width:14px;height:14px;border-radius:50%;background:var(--ink);
-           box-shadow:0 2px 0 rgba(44,33,24,.18);transition:background .2s,box-shadow .2s}
-  .lives i.low{background:var(--red)}    /* 只剩 ≤2 次时剩下的点变红预警 */
-  .lives i.gone{background:transparent;border:2px solid var(--red);opacity:.6;box-shadow:none}
-  .lives.hit{animation:sh .42s}          /* 掉一次机会时整排抖一下，避免玩家察觉不到 */
+  .diff.on{background:var(--chip);color:var(--ink);box-shadow:var(--sh1)}
+  body.picking .bar{margin-top:30px}
+  body.picking .seg{background:transparent;gap:8px;padding:0}
+  body.picking .diff{padding:15px 30px;border:1px solid var(--line);background:var(--surface);box-shadow:var(--sh1)}
+  body.picking .diff.on{border-color:var(--g1);box-shadow:0 0 0 3px rgba(79,70,229,.16),var(--sh1)}
 
-  /* 即时反馈：做成醒目的胶囊并 pop 进场 —— §0.1 里唯一保留"说话"的地方 */
-  .msg{display:flex;justify-content:center;align-items:center;min-height:40px;margin:10px 0 0;
-       font-size:13.5px;color:var(--muted);text-align:center}
-  .msg b{display:inline-block;font-size:16px;font-weight:700;padding:7px 21px;border-radius:99px;color:#fff;
-       animation:pop .32s cubic-bezier(.2,1.5,.4,1)}
-  .msg.no b{background:var(--red);box-shadow:0 3px 0 #a82424}
-  .msg.near b{background:var(--gold);color:#3a2a06;box-shadow:0 3px 0 #b57d09}
-  .msg.no{color:var(--red);font-weight:700}
+  /* ── 容错点（Hard）──────────────────────────────────────────── */
+  .lives{display:flex;gap:6px;justify-content:center;margin:0 0 12px}
+  .lives i{width:9px;height:9px;border-radius:99px;background:var(--ink);opacity:.8;
+           transition:background .2s,box-shadow .2s,opacity .2s}
+  .lives i.low{background:var(--red);opacity:1}              /* 只剩 ≤2 次时剩下的点变红 */
+  .lives i.gone{background:transparent;box-shadow:inset 0 0 0 1.5px var(--red);opacity:.5}
+  .lives.hit{animation:sh .42s}                              /* 掉机会时整排抖一下 */
 
-  /* 棋盘坐在一块浅色面板上 —— 给页面做出层次，也让近白的格子能"浮"起来 */
-  .panel{background:rgba(255,253,248,.66);border:1px solid rgba(236,223,201,.85);border-radius:20px;
-         padding:14px 14px 16px;margin-top:12px;
-         box-shadow:inset 0 1px 0 rgba(255,255,255,.9),0 12px 32px rgba(44,33,24,.07)}
+  /* ── 即时反馈：一枚悬浮胶囊（"差一匹"＝琥珀，"错误"＝红）────────── */
+  .msg{display:flex;justify-content:center;align-items:center;min-height:40px;margin:12px 0 0;
+       font-size:13px;color:var(--sub);text-align:center}
+  .msg b{display:inline-block;font-size:13.5px;font-weight:600;padding:8px 16px;border-radius:999px;
+       animation:pop .28s cubic-bezier(.2,.9,.3,1.2)}
+  .msg.near b{background:var(--near-bg);color:var(--near-ink);box-shadow:inset 0 0 0 1px var(--near-bg)}
+  .msg.no b{background:var(--no-bg);color:var(--no-ink);box-shadow:inset 0 0 0 1px var(--no-bg)}
+  .msg.no{color:var(--no-ink)}
 
-  /* 进度条：四段对应四组，解开一段才染上该组的颜色（未解开保持中性，不泄露分组） */
-  .prog{display:flex;gap:6px;justify-content:center;margin:6px 0 2px}
-  .prog i{width:46px;height:7px;border-radius:99px;
-          background:linear-gradient(180deg,rgba(44,33,24,.10),rgba(44,33,24,.04));
-          box-shadow:inset 0 1px 2px rgba(44,33,24,.10);transition:background .3s,box-shadow .3s}
-  .prog i.on{background:linear-gradient(180deg,rgba(255,255,255,.34),rgba(0,0,0,.10)),var(--c);
-             box-shadow:0 2px 0 rgba(44,33,24,.12)}
+  /* ── 面板：一张浮起的白卡 ───────────────────────────────────── */
+  .panel{margin-top:12px;padding:16px;background:var(--surface);border:1px solid var(--line);
+        border-radius:18px;box-shadow:var(--sh1);
+        backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}   /* 玻璃：透出背后极光 */
+  .phead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:14px}
+  .phead b{font-size:13px;font-weight:700}
+  .phead span{font-size:11.5px;color:var(--sub)}
 
-  /* 已解开的组 */
-  .grp{position:relative;border-radius:14px;padding:10px 14px;margin:9px 0;color:#fff;text-align:center;
-       overflow:hidden;
-       background:linear-gradient(180deg,rgba(255,255,255,.20),rgba(0,0,0,.14)),var(--c);
-       box-shadow:0 4px 0 rgba(44,33,24,.17),inset 0 1px 0 rgba(255,255,255,.28);
-       animation:in .38s cubic-bezier(.2,1.2,.4,1)}
-  .grp::after{content:"";position:absolute;inset:0 0 auto;height:42%;
-       background:linear-gradient(180deg,rgba(255,255,255,.16),transparent);pointer-events:none}
-  @keyframes in{0%{transform:translateY(-8px) scale(.96);opacity:0}100%{transform:none;opacity:1}}
-  .grp .gt{font-size:12.5px;font-weight:700;letter-spacing:.03em;opacity:.94}
+  /* 进度：四段＝四组，解开一段才染上该组色（未解开中性，不泄露分组）*/
+  .prog{display:flex;gap:6px;margin:0 0 14px}
+  .prog i{flex:1;height:4px;border-radius:99px;background:var(--line);transition:background .3s}
+  .prog i.on{background:var(--c)}
+
+  /* ── 已解开的组：淡底卡 + 左侧色条 + 组名用该组色 ─────────────── */
+  .grp{display:block;padding:12px 14px;margin:8px 0;background:var(--surface2);
+      border:1px solid var(--line2);border-left:3px solid var(--c);border-radius:12px;
+      color:var(--ink);text-align:left;box-shadow:var(--sh1);
+      animation:in .32s cubic-bezier(.2,.9,.3,1)}
+  @keyframes in{0%{transform:translateY(-6px);opacity:0}100%{transform:none;opacity:1}}
+  .grp .gt{font-size:13.5px;font-weight:700;color:var(--c)}
   /* 称号卡：gt = 称号（主标题），gs = 规则文本（副标题）
-     —— 裁定见 tools/条件与称号规则.md §0.1：规则文本是称号的注解，不是谜面 */
-  .grp.titled .gt{font-size:15.5px;letter-spacing:.06em}
-  .grp .gs{font-size:11px;line-height:1.42;opacity:.8;margin-top:2px}
-  .grp.titled .gm{margin-top:3px}
-  .grp .gm{font-size:16px;font-weight:700;line-height:1.35;margin-top:1px}
-  .grp.lost{filter:grayscale(.55);opacity:.68;box-shadow:none}
+     —— 裁定见 tools/赛马连线/条件与称号规则.md §0.1：规则文本是称号的注解，不是谜面 */
+  .grp.titled .gt{font-size:15px}
+  .grp .gs{font-size:11.5px;line-height:1.5;color:var(--sub);margin-top:2px}
+  .grp .gm{font-size:13.5px;font-weight:600;line-height:1.6;margin-top:6px}
+  .grp.lost{opacity:.62;filter:grayscale(.65)}                /* 没解开、被亮出来的组 */
 
-  /* 棋盘 */
-  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
-  @media(max-width:560px){.grid{grid-template-columns:repeat(2,1fr);gap:7px}}
-  .tile{position:relative;min-height:82px;padding:13px 9px;border:2px solid var(--line);border-radius:15px;
-        background:linear-gradient(180deg,#fffefb 0%,#fdf6ea 100%);
-        color:var(--ink);font:inherit;text-align:center;cursor:pointer;overflow:hidden;
-        display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
-        box-shadow:0 4px 0 rgba(44,33,24,.09),inset 0 1px 0 #fff;
-        transition:transform .1s,border-color .14s,opacity .15s,box-shadow .14s}
-  .tile .jp{font-size:15px;font-weight:700;line-height:1.24;word-break:break-all}
-  .tile .en{font-size:10px;color:var(--muted);line-height:1.2;word-break:break-word}
-  .tile::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;
-        background:var(--line);transition:background .14s}
-  .tile:hover{transform:translateY(-3px);border-color:var(--ink);box-shadow:0 8px 0 rgba(44,33,24,.10)}
-  .tile:hover::before{background:var(--ink)}
+  /* ── 棋盘：16 张浮起的白卡，选中＝墨黑填充（现代·高对比）────────── */
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  @media(max-width:620px){.grid{grid-template-columns:repeat(2,1fr)}}
+  .tile{position:relative;min-height:78px;padding:12px 8px;border:1px solid var(--line);border-radius:14px;
+        background:var(--surface);color:var(--ink);font:inherit;text-align:center;cursor:pointer;
+        display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+        box-shadow:var(--sh1);
+        transition:transform .16s cubic-bezier(.2,.9,.3,1),box-shadow .16s,background .16s,color .16s,border-color .16s}
+  /* 字号由 JS 的 fitTiles() 按可用宽度写 inline font-size ⇒ 长马名自动缩小、不硬拆
+     （word-break 只留作"缩到 10px 仍放不下"的兜底） */
+  .tile .jp{font-size:15px;font-weight:600;line-height:1.25;word-break:break-all}
+  .tile .en{font-size:9.5px;font-weight:500;color:var(--sub);letter-spacing:.08em;text-transform:uppercase;
+        line-height:1.2;word-break:break-word}
+  .tile:hover:not(.sel){transform:translateY(-3px);box-shadow:var(--sh2)}
+  .tile.sel{background:var(--btnfill);border-color:var(--btnfill);color:var(--onbtn);
+        box-shadow:0 12px 26px -14px rgba(30,42,51,.55)}
+  .tile.sel .en{color:var(--onbtn);opacity:.65}
+  .tile .ord{position:absolute;top:6px;right:6px;width:18px;height:18px;border-radius:6px;
+        background:rgba(30,42,51,.08);color:var(--sub);font-size:10px;font-weight:700;
+        display:flex;align-items:center;justify-content:center;animation:pop .22s ease-out}
+  .tile.sel .ord{background:transparent;color:inherit;box-shadow:inset 0 0 0 1px currentColor;opacity:.6}
+  @keyframes pop{0%{transform:scale(.5);opacity:0}100%{transform:none;opacity:1}}
+  .tile.dim{opacity:.45}                       /* 已选满 4 个时，压暗未选中的 */
+  .tile.bad{animation:sh .36s;border-color:var(--red);box-shadow:0 0 0 3px var(--no-bg)}
   /* 入场：只在开局时播一次（render() 每次点击都会重建格子，所以靠 #grid.enter 控制） */
-  #grid.enter .tile{animation:tin .4s cubic-bezier(.2,1.1,.4,1) both;
-        animation-delay:calc(var(--i,0) * 22ms)}
-  @keyframes tin{0%{transform:translateY(10px) scale(.94);opacity:0}100%{transform:none;opacity:1}}
-  .tile.sel{background:var(--ink);border-color:var(--ink);color:#fff;
-        box-shadow:0 4px 0 rgba(44,33,24,.32)}
-  .tile.sel::before{background:var(--gold)}
-  .tile.sel .en{color:rgba(255,255,255,.62)}
-  .tile .ord{position:absolute;top:5px;right:6px;width:19px;height:19px;border-radius:50%;
-        background:var(--gold);color:#3a2a06;font-size:11px;font-weight:700;
-        display:flex;align-items:center;justify-content:center;animation:pop .2s ease-out}
-  @keyframes pop{0%{transform:scale(.4);opacity:0}100%{transform:none;opacity:1}}
-  .tile.dim{opacity:.42}                       /* 已选满 4 个时，压暗未选中的 */
-  .tile.bad{animation:sh .36s;border-color:var(--red)}
+  #grid.enter .tile{animation:tin .36s cubic-bezier(.2,.9,.3,1) both;
+        animation-delay:calc(var(--i,0) * 18ms)}
+  @keyframes tin{0%{transform:translateY(10px);opacity:0}100%{transform:none;opacity:1}}
   @keyframes sh{0%,100%{transform:translateX(0)}20%{transform:translateX(-7px)}
                 40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(3px)}}
 
-  .actions{margin-top:18px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;align-items:center}
-  button.b{font:inherit;font-size:14px;font-weight:700;padding:11px 26px;border-radius:99px;cursor:pointer;
-        border:2px solid var(--line);color:var(--ink);
-        background:linear-gradient(180deg,#fffdf8,#fbf3e5);
-        box-shadow:0 4px 0 rgba(44,33,24,.10),inset 0 1px 0 #fff;
-        transition:transform .1s,box-shadow .12s,border-color .12s}
-  button.b:hover:not(:disabled){transform:translateY(-2px);border-color:var(--ink);box-shadow:0 6px 0 rgba(44,33,24,.11)}
-  button.b:active:not(:disabled){transform:translateY(2px);box-shadow:0 1px 0 rgba(44,33,24,.10)}
-  button.b:disabled{opacity:.42;cursor:default}
-  button.b.pri{background:linear-gradient(180deg,#453528,#241a11);border-color:#241a11;color:#fff;
-        box-shadow:0 4px 0 rgba(44,33,24,.38),inset 0 1px 0 rgba(255,255,255,.16)}
-  button.b.pri:hover:not(:disabled){border-color:#241a11;box-shadow:0 6px 0 rgba(44,33,24,.38)}
+  /* ── 按钮：圆角描边；主操作＝墨黑填充，hover 上浮 ─────────────── */
+  .actions{margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;align-items:center}
+  button.b{font:inherit;font-size:13px;font-weight:600;padding:11px 22px;border-radius:12px;cursor:pointer;
+        border:1px solid var(--line);background:var(--surface);color:var(--ink);box-shadow:var(--sh1);
+        transition:transform .14s,box-shadow .14s,background .14s,color .14s,border-color .14s}
+  button.b:hover:not(:disabled){transform:translateY(-1px);box-shadow:var(--sh2)}
+  button.b:active:not(:disabled){transform:translateY(0)}
+  button.b:disabled{opacity:.4;cursor:default;box-shadow:none}
+  button.b.pri{background:var(--btnfill);color:var(--onbtn);border-color:var(--btnfill)}
+  button.b.pri:hover:not(:disabled){box-shadow:0 16px 30px -16px rgba(30,42,51,.55)}
   /* 投降：压低存在感（确认走弹窗） */
-  button.b.give{font-size:12.5px;padding:8px 18px;color:var(--muted)}
+  button.b.give{border-color:transparent;background:transparent;box-shadow:none;color:var(--sub);font-weight:500}
+  button.b.give:hover:not(:disabled){color:var(--red);transform:none;box-shadow:none}
 
-  /* 投降确认弹窗 */
+  /* ── 投降确认弹窗 ──────────────────────────────────────────── */
   .modal{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;
-         padding:20px;background:rgba(44,33,24,.42);backdrop-filter:blur(3px);
-         animation:fade .18s ease-out}
+         padding:20px;background:rgba(30,42,51,.38);backdrop-filter:blur(6px);
+         animation:fade .16s ease-out}
   @keyframes fade{from{opacity:0}to{opacity:1}}
-  .sheet{width:100%;max-width:330px;padding:22px 22px 18px;text-align:center;border-radius:20px;
-         background:linear-gradient(180deg,#fffdf8,#fbf3e5);
-         box-shadow:0 22px 54px rgba(44,33,24,.30),inset 0 1px 0 #fff;
-         animation:sheet .26s cubic-bezier(.2,1.3,.4,1)}
-  @keyframes sheet{from{transform:translateY(14px) scale(.94);opacity:0}to{transform:none;opacity:1}}
-  .sheet .mt{font-size:16.5px;font-weight:700;margin:0 0 18px;letter-spacing:.04em}
+  .sheet{width:100%;max-width:330px;padding:22px;text-align:center;border-radius:18px;
+         background:var(--chip);border:1px solid var(--line);
+         box-shadow:0 30px 64px -26px rgba(30,42,51,.40);
+         backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+         animation:sheet .22s cubic-bezier(.2,.9,.3,1.1)}
+  @keyframes sheet{from{transform:translateY(14px);opacity:0}to{transform:none;opacity:1}}
+  .sheet .mt{font-size:15px;font-weight:700;margin:0 0 16px}
   .sheet .mrow{display:flex;gap:10px}
   .sheet .mrow .b{flex:1;padding:11px 0}
 
   #confetti{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:9}
-  #confetti i{position:absolute;top:-14px;width:9px;height:14px;border-radius:2px;opacity:.95;
+  #confetti i{position:absolute;top:-14px;width:7px;height:12px;border-radius:2px;opacity:.95;
         animation:fall linear forwards}
   @keyframes fall{to{transform:translateY(105vh) rotate(720deg);opacity:.9}}
 </style>
@@ -186,19 +212,26 @@
 <div id="confetti"></div>
 <div class="wrap">
   <a class="back" href="../">← 返回首页</a>
-  <h1>赛马连线</h1>
+
+  <!-- 页头：无装饰线，靠字号/字重/留白建立层级 -->
+  <header class="masthead">
+    <div class="eyebrow">Connections</div>
+    <h1>赛马连线</h1>
+    <div class="meta">16 匹马，4 个隐藏主题，每组恰好 4 匹</div>
+  </header>
 
   <div class="bar">
     <div class="seg">
-      <button class="diff" data-d="easy">Easy</button>
-      <button class="diff" data-d="normal">Normal</button>
-      <button class="diff" data-d="hard">Hard</button>
+      <button class="diff" data-d="easy">简单</button>
+      <button class="diff" data-d="normal">普通</button>
+      <button class="diff" data-d="hard">难<span class="dnote">5 次机会</span></button>
     </div>
   </div>
   <div class="msg" id="msg"></div>
 
   <div id="board" hidden>
     <div class="panel">
+      <div class="phead"><b>出走表</b><span>点选 4 匹 → 提交</span></div>
       <div class="prog" id="prog"></div>
       <div id="solved"></div>
       <div class="lives" id="lives" hidden></div>
@@ -229,20 +262,23 @@
 /* EASY_TYPES：Easy 档只用认得度高的几类主题；Normal / Hard 全放开
    EASY_CONF ：Easy 档的混淆度上限（池内同时满足 ≥2 个主题的马占比）
    MAX_LIVES ：Hard 档全局容错；Easy / Normal 不限（不显示容错点）
-   PICK_TOP  ：每组从「独占成员」的前几名里随机挑 4 匹（h 已按名气降序 ⇒ 挑出来的都认得） */
+   2026-09-23 用户裁定：**本作去掉对名气的限制** ⇒ 每组直接从**全部独占成员**里随机挑 4 匹
+   （原来只从"名气前 10"里抽，现在会出现冷门马）。Bingo / 找内鬼 保持原样。 */
 const EASY_TYPES = new Set(['sire','dsire','owner','breeder','coat','gen','center','ctry','g1race']);
 /* EASY_MAX_CMP：Easy 档最多几组可以是复合条件。
    不加这条的话 Easy 和 Normal 一样难 —— 题库里复合 4678 张 vs 单条件 387 张，
    纯随机抽必然 ≈3.7/4 组都是复合，而 Easy 是给休闲玩家的档位。
    Normal 与 Hard 用**完全相同**的题池（只差容错次数），与参照站一致。 */
-const EASY_CONF = 0.10, EASY_MAX_CMP = 2, MAX_LIVES = { hard: 5 }, PICK_TOP = 10;
-/* TITLE_P：一盘里出现「称号」组的概率。
-   称号卡只有 22 张（普通卡 5000+），纯随机抽一盘约 1.7% 才碰上 —— 而它们恰恰是最精致的题
-   （三冠馬・東京巧者・東京芝２４００ｍのＧ１勝馬…）。所以按概率**主动塞一组**。
-   称号卡的 conds[0].t = 'title'，是独立类型 ⇒ "四组主类型互不相同"天然满足。
-   Easy 不出（EASY_TYPES 白名单不含 title）。 */
-const TITLE_P = 0.35;
-const GCOLOR = ['#2f6fdb', '#22a35e', '#f0ac1e', '#8b5cf6'];   // 四组的身份色（红色留给"错了"）
+const EASY_CONF = 0.10, EASY_MAX_CMP = 2, MAX_LIVES = { hard: 5 };
+/* 2026-09-24 内容池化（见 tools/赛马连线/单条件类型梳理.md §13）：
+   池 = **白名单池**（生成器产出，约 190 张）⇒ 类型少、每类卡够多，所以改成
+   ① **类型均匀**：先等概率抽 4 个类型，再在类内等概率抽 1 张（旧实现是"抽卡再拒绝同类型"＝按卡数加权）
+   ② **称号 = 1 个类型**：title（真称号）与 concept（条件句）算同一类，共 23 张
+   ③ **删掉旧的 TITLE_P 硬塞**：称号作为普通类型参与均匀抽，每盘出现率 ≈1/11×4 ≈ 32%，与旧值一致 */
+const typeGrp = t => (t === 'title' || t === 'concept') ? 'title' : t;
+/* 四组的身份色：**引用 CSS 变量**（--g1…--g4）而不是写死 hex ——
+   这样深色模式下组色会自动跟着 :root 的深色值走。红色仍只留给"错了" */
+const GCOLOR = ['var(--g1)', 'var(--g2)', 'var(--g3)', 'var(--g4)'];
 
 let CARDS = [], NM = { n: [], e: [] };
 /* order：棋盘上格子的**固定顺序**。只在开局打乱一次，解开一组就把那 4 匹摘掉，
@@ -266,23 +302,18 @@ function confusability(q){
 
 function build(){
   const easy = diff === 'easy';
-  const pool = easy ? CARDS.filter(c => c.conds.every(k => EASY_TYPES.has(k.t))) : CARDS;
-  const tpool = easy ? [] : CARDS.filter(c => c.conds[0].t === 'title');
+  const src = easy ? CARDS.filter(c => EASY_TYPES.has(c.conds[0].t)) : CARDS;
+  // 按类型分桶 ⇒ 类型之间**等概率**（旧实现 pick(CARDS) 后拒绝同类型 = 按卡数加权，厩舎 vs 毛色差 21 倍）
+  const byType = new Map();
+  for (const c of src){
+    const g = typeGrp(c.conds[0].t);
+    if (!byType.has(g)) byType.set(g, []);
+    byType.get(g).push(c);
+  }
+  const grps = [...byType.keys()];
+  if (grps.length < 4) return null;
   for (let t = 0; t < 4000; t++){
-    const q = [];
-    const seen = new Set();
-    // 先按概率塞一组「称号」；它凑不够独占成员时，下面的 excl 检查会把这一盘整个丢掉重来
-    if (tpool.length && Math.random() < TITLE_P){
-      const tc = pick(tpool);
-      q.push(tc); seen.add(tc.conds[0].t);
-    }
-    let guard = 0;
-    while (q.length < 4 && guard++ < 200){          // 四个不同「主类型」，题目才有变化
-      const c = pick(pool);
-      if (seen.has(c.conds[0].t)) continue;
-      seen.add(c.conds[0].t); q.push(c);
-    }
-    if (q.length < 4) continue;
+    const q = shuffle(grps).slice(0, 4).map(g => pick(byType.get(g)));   // 4 个不同类型 × 类内随机
     if (easy && q.filter(c => c.conds.length === 2).length > EASY_MAX_CMP) continue;
     q.forEach(c => c.set || (c.set = new Set(c.h)));
     // 生命线：每张卡只从「独占成员」里挑 —— 每匹马恰好属于 1 组 ⇒ 分组唯一
@@ -295,7 +326,7 @@ function build(){
     if (diff === 'easy' && confusability(q) > EASY_CONF) continue;
     const g = q.map((c, i) => ({
       card: c,
-      hs: shuffle(excl[i].slice(0, PICK_TOP)).slice(0, 4)
+      hs: shuffle(excl[i]).slice(0, 4)
     }));
     if (new Set(g.flatMap(x => x.hs)).size !== 16) continue;
     return shuffle(g.map((x, i) => ({ ...x, color: GCOLOR[i] })));
@@ -329,10 +360,32 @@ function render(){
       (k >= 0 ? '<span class="ord">' + (k + 1) + '</span>' : '') +
     '</button>';
   }).join('');
+  fitTiles();
   // 选择没变就别让再提交一次 —— 刚判过错的组合，手快连点会白掉一条命
   el('bGo').disabled = sel.length !== 4 || sel.slice().sort().join() === lastTry;
   renderLives();
 }
+
+/* 马名字号自适应（2026-09-24 用户要求）
+   长马名（如 ジェンティルドンナ・キタサンブラック）在窄屏两列下会被 word-break 硬拆 ⇒
+   按**该格实际可用宽度**从 16px 逐 0.5px 往下收缩，直到一行放得下；缩到 10px 仍放不下才允许换行。
+   为什么用测量而不是"按字数给档位"：格子宽度随视口/面板内边距变化，测量才是真自适应。 */
+function fitTiles(){
+  document.querySelectorAll('#grid .tile .jp').forEach(el => {
+    const box = el.parentElement.clientWidth - 16;   // 扣掉 .tile 的左右内边距（8px × 2）
+    el.style.whiteSpace = 'nowrap';
+    let fs = 16;
+    el.style.fontSize = fs + 'px';
+    while (fs > 10 && el.scrollWidth > box){
+      fs -= 0.5;
+      el.style.fontSize = fs + 'px';
+    }
+    if (el.scrollWidth > box) el.style.whiteSpace = '';   // 兜底：确实太长 ⇒ 交回给 word-break
+  });
+}
+/* 视口变化（旋屏 / 拖窗口）后宽度变了 ⇒ 重算一次（防抖） */
+let fitT = 0;
+addEventListener('resize', () => { clearTimeout(fitT); fitT = setTimeout(fitTiles, 120); });
 
 /* 单独抽出来：猜错时只需刷新容错点，不必整盘重绘（重绘会打断抖动，也没必要） */
 function renderLives(){
@@ -400,7 +453,7 @@ function finish(win){
 }
 
 function confetti(n){
-  const box = el('confetti'), cols = ['#e33d3d', '#f0ac1e', '#2f6fdb', '#22a35e', '#8b5cf6', '#e8558b'];
+  const box = el('confetti'), cols = ['#db2777', '#0284c7', '#b45309', '#7c3aed', '#e11d48', '#241e40'];
   let html = '';
   for (let i = 0; i < n; i++)
     html += '<i style="left:' + (Math.random() * 100).toFixed(1) + '%;background:' + pick(cols) +
