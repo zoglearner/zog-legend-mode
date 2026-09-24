@@ -128,9 +128,16 @@
   .prog i{flex:1;height:4px;border-radius:99px;background:var(--line);transition:background .3s}
   .prog i.on{background:var(--c)}
 
-  /* ── 已解开的组：淡底卡 + 左侧色条 + 组名用该组色 ─────────────── */
+  /* ── 已解开的组：**组色底**卡 + 左侧色条 + 组名用该组色 ─────────────
+     ⚠️ 2026-09-25 用户：「每次选中正确答案以后出现的淡色，和原来没选的分不太出来」
+        原样是 rgba(255,255,255,.58) —— 和棋盘上的白卡几乎一个色，只有 3px 侧条在带色。
+        ⇒ 底色/描边改成**组色 22% / 32% 混白**（第一行 --surface2 是 color-mix 的兜底：
+        不认 color-mix 的浏览器退回老样式，只是不够醒目，不会白屏）。 */
   .grp{display:block;padding:12px 14px;margin:8px 0;background:var(--surface2);
-      border:1px solid var(--line2);border-left:3px solid var(--c);border-radius:12px;
+      background:color-mix(in srgb, var(--c) 22%, var(--chip));
+      border:1px solid var(--line2);                    /* color-mix 兜底（同 --surface2 一行）*/
+      border:1px solid color-mix(in srgb, var(--c) 32%, transparent);
+      border-left:4px solid var(--c);border-radius:12px;
       color:var(--ink);text-align:left;box-shadow:var(--sh1);
       animation:in .32s cubic-bezier(.2,.9,.3,1)}
   @keyframes in{0%{transform:translateY(-6px);opacity:0}100%{transform:none;opacity:1}}
