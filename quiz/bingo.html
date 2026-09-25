@@ -182,6 +182,13 @@ let board = [], deck = [], at = 0, skipped = [];
 let filled = 0, cur = null, done = false;
 
 const el = id => document.getElementById(id);
+/* 英文名只在「跟日文名不一样」时才显示 —— 2026-09-25 用户：
+   「如果是英语名字的比如 Frankel 和 Flightline 就不用在下面再标英语了」 */
+const enName = h => {
+  const raw = NM.e[h] || '';
+  const A = s => String(s).replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+  return (raw && A(raw) !== A(NM.n[h] || '')) ? raw : '';
+};
 const ri = n => Math.random() * n | 0;
 const pick = a => a[ri(a.length)];
 const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--){ const j = ri(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; };
@@ -270,7 +277,7 @@ function cellHtml(b, i, just){
       '<span class="tlab">' + (TYPE_LABEL[b.t] || b.t) + '</span><span class="stamp">✓</span>' +
       '<span class="cond2">' + b.n + '</span>' +
       '<span class="who">' + NM.n[b.who] + '</span>' +
-      (NM.e[b.who] ? '<span class="en2">' + NM.e[b.who] + '</span>' : '') +
+      (enName(b.who) ? '<span class="en2">' + enName(b.who) + '</span>' : '') +
       '</button>';
   }
   return '<button class="cell' + (done ? ' dead' : '') + '" data-i="' + i + '"' + st + '">' +
@@ -289,7 +296,7 @@ function nextCard(){
   el('msg').textContent = ''; el('msg').className = 'msg';    // 换牌时清掉上一次的提示
   el('curNm').textContent = nm;
   el('curNm').className = 'nm' + (nm.length > 8 ? ' long' : '');
-  el('curEn').textContent = NM.e[cur] || '';
+  el('curEn').textContent = enName(cur);
   const ball = el('ball');
   ball.className = 'ball';                                   // 球不带类型色，避免被当成指向某格
   void ball.offsetWidth; ball.classList.add('pop');

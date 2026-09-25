@@ -227,11 +227,13 @@
     <div class="meta">16 匹马，4 个隐藏主题，每组恰好 4 匹</div>
   </header>
 
+  <!-- 难度：**普通与难同池**（只差容错 5 次）⇒ 在「难」上挂小注说明，
+       免得玩家当成"难＝题更难"（2026-09-25 用户） -->
   <div class="bar">
     <div class="seg">
       <button class="diff" data-d="easy">简单</button>
       <button class="diff" data-d="normal">普通</button>
-      <button class="diff" data-d="hard">难<span class="dnote">5 次机会</span></button>
+      <button class="diff" data-d="hard">难<span class="dnote">难度同普通・5 次机会</span></button>
     </div>
   </div>
   <div class="msg" id="msg"></div>
@@ -266,23 +268,38 @@
 </div>
 
 <script>
-/* EASY_TYPES：Easy 档只用认得度高的几类主题；Normal / Hard 全放开
-   EASY_CONF ：Easy 档的混淆度上限（池内同时满足 ≥2 个主题的马占比）
-   MAX_LIVES ：Hard 档全局容错；Easy / Normal 不限（不显示容错点）
-   2026-09-23 用户裁定：**本作去掉对名气的限制** ⇒ 每组直接从**全部独占成员**里随机挑 4 匹
-   （原来只从"名气前 10"里抽，现在会出现冷门马）。Bingo / 找内鬼 保持原样。 */
-const EASY_TYPES = new Set(['sire','dsire','owner','breeder','coat','gen','center','ctry','g1race']);
+/* ⚠️ 2026-09-25 晚 **难度分层重做**（旧制 `EASY_TYPES` 已删）：
+   旧制 = 按**类型**删减（Easy 只放 9 类）⇒ 副作用：称号・条件句・骑手・厩舎・一级赛N胜
+   共 **74 张在 Easy 永远不出现** —— 用户「有些风味卡出现的几率太小了」的根因就是它。
+   新制 = **三档内容全开放（181 张同池）**，难度改由「**4 匹答案马的名气门槛**」表达，见 `FAME_BAR`。
+   EASY_CONF ：Easy 档的混淆度上限（盘内同时满足 ≥2 个主题的马占比）
+   MAX_LIVES ：Hard 档全局容错；Easy / Normal 不限（不显示容错点） */
 /* EASY_MAX_CMP：Easy 档最多几组可以是复合条件。
    不加这条的话 Easy 和 Normal 一样难 —— 题库里复合 4678 张 vs 单条件 387 张，
    纯随机抽必然 ≈3.7/4 组都是复合，而 Easy 是给休闲玩家的档位。
    Normal 与 Hard 用**完全相同**的题池（只差容错次数），与参照站一致。 */
 const EASY_CONF = 0.10, EASY_MAX_CMP = 2, MAX_LIVES = { hard: 5 };
+/* FAME_BAR：**难度分层的主旋钮**（2026-09-25 晚 用户提案：「把 easy 池内选择的名气进一步限制」）
+   ＝ 每组那 4 匹答案**从「名气 ≥ bar」的独占成员里挑**（Easy ≥2 ＝ G1 胜 or 2 场以上重赏）。
+   实测（6000 盘模拟）：答案名气 中位 6 → **9**、p10 **1 → 2**；盘面成功率 **100%**；
+   ⇒ **Easy 盘上 16 匹全部带门槛**（不再混"认不出的马"）。
+   ⚠️ **兜底放宽**（必须）：某张卡凑不出 4 匹够名气的成员 ⇒ **该卡不受门槛约束**。
+      否则会被整张剔掉：实测 ≥2 丢 5 张（`馬主 = 三木　正浩`・`父馬 = ゴールドシップ`・
+      `父馬 = モーリス ＋ 母父 = ディープインパクト`・`生产牧場 = 日進牧場/杵臼牧場`）、
+      ≥3 丢 9 张、≥5 丢 14 张；**兜底后 0 张被丢** ✓
+   ⚠️ 门槛只作用于**答案候选**（`c.set`）—— 卡本身三档都能出现 ⇒ 风味卡（称号・条件句・凯旋门赏・世代）
+      不再被埋掉 ✓（这正是上一版给世代卡开小口子 `GEN_BAR` 想解决、却没解决的问题）。
+   ⚠️ 旧裁定继续有效：**Normal 与 Hard 同池**（两档都 bar=0），唯一差别是 `MAX_LIVES`。 */
+const FAME_BAR = { easy: 2, normal: 0, hard: 0 };
 /* 2026-09-24 内容池化（见 tools/赛马连线/单条件类型梳理.md §13）：
    池 = **白名单池**（生成器产出，约 190 张）⇒ 类型少、每类卡够多，所以改成
    ① **类型均匀**：先等概率抽 4 个类型，再在类内等概率抽 1 张（旧实现是"抽卡再拒绝同类型"＝按卡数加权）
-   ② **称号 = 1 个类型**：title（真称号）与 concept（条件句）算同一类，共 23 张
-   ③ **删掉旧的 TITLE_P 硬塞**：称号作为普通类型参与均匀抽，每盘出现率 ≈1/11×4 ≈ 32%，与旧值一致 */
-const typeGrp = t => (t === 'title' || t === 'concept') ? 'title' : t;
+   ② **称号与条件句拆成两组**（2026-09-25 用户：「把现有的某些类型再拆」）—— 以前合并成一组
+      ⇒ 一盘里不可能同时出现"三冠馬"和"在东京草地2400m赢过G1"；拆开后可以。
+   ③ **删掉旧的 TITLE_P 硬塞**：称号作为普通类型参与均匀抽 */
+/* typeGrp：组题分组 = 卡片自带的 `g`（生成器写进 cards.json；**判定用 conds[0].t 不动**）
+   ⇒ 想改"哪些卡算同一组"只改 tools/gen_connections.py 的 GROUP_OF，前端不用动。 */
+const typeGrp = c => c.g || c.conds[0].t;
 /* 四组的身份色：**引用 CSS 变量**（--g1…--g4）而不是写死 hex ——
    这样深色模式下组色会自动跟着 :root 的深色值走。红色仍只留给"错了" */
 const GCOLOR = ['var(--g1)', 'var(--g2)', 'var(--g3)', 'var(--g4)'];
@@ -294,6 +311,14 @@ let diff = 'easy', groups = [], solved = [], sel = [], order = [], lives = 0, do
 let lastTry = '';   // 上一次判错的组合（排序后的键），用来禁用重复提交
 
 const el = id => document.getElementById(id);
+/* 英文名只在「跟日文名不一样」时才显示 —— 2026-09-25 用户：
+   「**如果是英语名字的比如 Frankel 和 Flightline 就不用在下面再标英语了**」
+   （池里有 9 匹用英文名展示的外国名马，`Frankel` 下面原本又写一遍 `Frankel`）*/
+const enName = h => {
+  const raw = NM.e[h] || '';
+  const A = s => String(s).replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+  return (raw && A(raw) !== A(NM.n[h] || '')) ? raw : '';
+};
 const ri = n => Math.random() * n | 0;
 const pick = a => a[ri(a.length)];
 const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--){ const j = ri(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; };
@@ -309,11 +334,14 @@ function confusability(q){
 
 function build(){
   const easy = diff === 'easy';
-  const src = easy ? CARDS.filter(c => EASY_TYPES.has(c.conds[0].t)) : CARDS;
+  const src = CARDS;              // ⚠️ 三档**同池**（181 张全开放）—— 难度不再靠"删类型"实现
   // 按类型分桶 ⇒ 类型之间**等概率**（旧实现 pick(CARDS) 后拒绝同类型 = 按卡数加权，厩舎 vs 毛色差 21 倍）
   const byType = new Map();
   for (const c of src){
-    const g = typeGrp(c.conds[0].t);
+    // ⚠️ 必须传**卡片**：`typeGrp(c)` ⇒ 取卡上的 `g`（生成器写的「原子块」组名，14 个），
+    //    没有 g 才退回 `conds[0].t`。2026-09-25 修：原来写成 `typeGrp(c.conds[0].t)`
+    //    （传的是**字符串**）⇒ `"owner".conds[0]` 直接 TypeError，页面整页打不开。
+    const g = typeGrp(c);
     if (!byType.has(g)) byType.set(g, []);
     byType.get(g).push(c);
   }
@@ -322,12 +350,22 @@ function build(){
   for (let t = 0; t < 4000; t++){
     const q = shuffle(grps).slice(0, 4).map(g => pick(byType.get(g)));   // 4 个不同类型 × 类内随机
     if (easy && q.filter(c => c.conds.length === 2).length > EASY_MAX_CMP) continue;
-    q.forEach(c => c.set || (c.set = new Set(c.h)));
+    // 有效成员集 = 「答案候选」：Easy 只从**够名气**的成员里挑；凑不够 4 匹 ⇒ 该卡**兜底放宽**
+    // （`c.set` 挂在卡对象上 ⇒ 缓存键必须带难度，否则跨档串味）
+    const bar = FAME_BAR[diff] || 0;
+    q.forEach(c => {
+      const k = 'set_' + diff;
+      if (!c[k]){
+        const fam = bar ? c.h.filter(h => (NM.f[h] || 0) >= bar) : c.h;
+        c[k] = new Set(fam.length >= 4 ? fam : c.h);    // ⚠️ 兜底：不够 4 匹就整卡放宽（⇒ 0 张卡被丢）
+      }
+      c.set = c[k];
+    });
     // 生命线：每张卡只从「独占成员」里挑 —— 每匹马恰好属于 1 组 ⇒ 分组唯一
     const excl = q.map((c, i) => {
       const others = new Set();
       q.forEach((o, j) => { if (j !== i) o.set.forEach(h => others.add(h)); });
-      return c.h.filter(h => !others.has(h));
+      return c.h.filter(h => !others.has(h) && c.set.has(h));
     });
     if (!excl.every(e => e.length >= 4)) continue;
     if (diff === 'easy' && confusability(q) > EASY_CONF) continue;
@@ -363,7 +401,7 @@ function render(){
     return '<button class="tile' + (k >= 0 ? ' sel' : (full ? ' dim' : '')) +
       '" data-h="' + h + '" style="--i:' + i + '">' +
       '<span class="jp">' + NM.n[h] + '</span>' +
-      (NM.e[h] ? '<span class="en">' + NM.e[h] + '</span>' : '') +
+      (enName(h) ? '<span class="en">' + enName(h) + '</span>' : '') +
       (k >= 0 ? '<span class="ord">' + (k + 1) + '</span>' : '') +
     '</button>';
   }).join('');
