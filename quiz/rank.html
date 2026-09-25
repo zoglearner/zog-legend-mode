@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>赛马排行 · 排序</title>
+<!--
+  赛马排行（排序游戏）
+  ─────────────────────
+  一局 = 一个概念（池化随机）⇒ 从池里随机抽 N 个数值互不相同的对象 ⇒ 玩家排出名次。
+  题面**说「更」不说「最」**（2026-09-25 裁定）：只要求"把这 N 个排序"，不宣称史上前十。
+  布局参考 futbol11 的 **Top10**（竖向 1–N 行，每行填一个），不是金字塔。
+  数据：../assets/data/rank/play.json（tools/gen_rank_cards.py → gen_rank_play.py）
+
+  视觉（2026-09-26 定）：**青绿松石 × 珊瑚**（亮 · 冷暖对撞）
+    每个游戏一套皮（用户 2026-09-26「不用一致，每个游戏要有自己的风格」）：
+      连线＝雾霾青灰×蜜橙（亮·冷灰）｜Bingo＝暖米黄（亮·暖）｜找内鬼＝暗青绿（暗·冷绿）
+      首页＝白+墨绿 ｜ 淡紫晨光＝📦 留给别的游戏
+      ⇒ 本页＝亮底 **松石 #0f8b8d** 打底 ＋ **珊瑚 #f2643c** 作 accent，
+        色温与首页墨绿、连线灰青、Bingo 暖米黄都错开（对比页 tools/赛马排行/theme_compare.html
+        里与「朱赤×墨」二选一，用户选了这一套）。
+    一种颜色只准一种含义：珊瑚＝强调/序号/选中，松石＝正确，玫红＝错误。
+-->
+<style>
+  :root{
+    --bg:#eaf7f5;                                  /* 亮 · 松石底 */
+    --surface:rgba(255,255,255,.80); --surface2:rgba(255,255,255,.66);
+    --chip:#ffffff;
+    --list-bg:rgba(15,139,141,.05); --slot-bg:rgba(15,139,141,.035);
+    --ink:#10262a; --sub:#5d7d80; --ph:#93adb0;
+    --line:rgba(16,38,42,.14); --line2:rgba(16,38,42,.08);
+    --accent:#f2643c;                              /* 珊瑚：强调 / 选中 / 结果 */
+    --accent-line:rgba(242,100,60,.45); --accent-dim:rgba(242,100,60,.12);
+    --ok:#0f8b8d; --ok-line:rgba(15,139,141,.5);  --ok-bg:rgba(15,139,141,.13);
+    --bad:#e2564c; --bad-line:rgba(226,86,76,.5); --bad-bg:rgba(226,86,76,.11);
+    --btnfill:#0f8b8d; --onbtn:#fff;               /* 主按钮＝松石填充反白 */
+    --rk:linear-gradient(160deg,#12a3a5,#0b6f71);  /* 序号圆标 */
+    --sh1:0 1px 2px rgba(16,38,42,.07);
+    --sh2:0 20px 44px -24px rgba(16,38,42,.34);
+    --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","PingFang SC",
+           "Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;color:var(--ink);min-height:100vh;font-size:15px;line-height:1.6;
+       font-family:var(--sans);background:var(--bg);
+       /* 光晕：左上松石（主）＋ 右下珊瑚 —— 固定不随滚动 */
+       background-image:
+         radial-gradient(86% 56% at 6% -12%, rgba(15,139,141,.26), transparent 62%),
+         radial-gradient(70% 50% at 96% 106%, rgba(242,100,60,.18), transparent 62%);
+       background-attachment:fixed}
+  .wrap{max-width:640px;margin:0 auto;padding:22px 16px 64px}
+
+  /* ── 页头 ─────────────────────────── */
+  .top{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  h1{margin:0;font-size:22px;font-weight:650;letter-spacing:.3px}
+  h1 em{font-style:normal;color:var(--accent)}
+  .sub{color:var(--sub);font-size:12px}
+  button{font:inherit;font-size:12.5px;padding:6px 13px;border:1px solid var(--line);
+         background:var(--surface2);color:var(--ink);border-radius:9px;cursor:pointer;
+         backdrop-filter:blur(8px);transition:.15s}
+  button:hover{border-color:var(--accent);color:var(--accent)}
+  button.main{background:var(--btnfill);color:var(--onbtn);border-color:transparent;font-weight:600}
+  button.main:hover{filter:brightness(1.06);color:var(--onbtn)}
+
+  /* ── 面板 ─────────────────────────── */
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;
+        padding:16px 16px 18px;backdrop-filter:blur(14px);box-shadow:var(--sh2)}
+  /* 顶部＝**简短类别**（参考 Pyramid），右侧一行小字标明方向 */
+  .cat{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .prompt{font-size:17px;font-weight:600;letter-spacing:.2px}
+  .tags{margin-top:6px;display:flex;gap:6px;flex-wrap:wrap}
+  .tag{font-size:11px;padding:2px 9px;border-radius:99px;border:1px solid var(--line);
+       color:var(--sub);background:var(--surface2)}
+  .tag.k{color:var(--accent);border-color:var(--accent-line);background:var(--accent-dim)}
+
+  /* ── 榜单（Top10 式：竖向 1–N 行）───── */
+  .list{margin-top:14px;border:1px solid var(--line);border-radius:13px;overflow:hidden;
+        background:var(--list-bg)}
+  .row{display:flex;align-items:center;gap:10px;padding:0 11px;min-height:42px;
+       border-bottom:1px solid var(--line2)}
+  .row:last-child{border-bottom:0}
+  .rk{flex:none;width:23px;height:23px;border-radius:50%;display:grid;place-items:center;
+      font-size:11.5px;font-weight:700;font-variant-numeric:tabular-nums;
+      color:var(--onbtn);background:var(--rk)}
+  .slot{flex:1;min-height:31px;display:flex;align-items:center;padding:4px 10px;
+        border-radius:9px;border:1px dashed transparent;cursor:pointer;transition:.13s}
+  .slot.empty{border-color:var(--line);background:var(--slot-bg)}
+  .slot:hover{background:rgba(15,139,141,.08)}
+  .slot.sel{border-style:solid;border-color:var(--accent);background:var(--accent-dim)}
+  .slot.ok{border-style:solid;border-color:var(--ok-line);background:var(--ok-bg)}
+  .slot.bad{border-style:solid;border-color:var(--bad-line);background:var(--bad-bg)}
+  .slot .nm{font-size:13.5px;font-weight:600}
+  .slot .vl{font-size:11.5px;color:var(--sub);margin-left:7px}
+  .slot .ph{font-size:11.5px;color:var(--ph)}
+
+  /* ── 待选区 ───────────────────────── */
+  .pool{display:flex;flex-wrap:wrap;gap:7px;margin-top:13px;min-height:46px;padding:10px;
+        border:1px dashed var(--line);border-radius:12px;background:var(--slot-bg)}
+  .chip{font-size:12.5px;padding:5px 11px;border:1px solid var(--line);border-radius:99px;
+        background:var(--chip);cursor:grab;white-space:nowrap;transition:.13s;
+        box-shadow:var(--sh1)}
+  .chip:hover{border-color:var(--accent);color:var(--accent);transform:translateY(-1px)}
+  .chip.drag{opacity:.35}
+
+  .howto{font-size:11.5px;color:var(--sub);margin-top:10px;line-height:1.7}
+  .howto b{color:var(--ink);font-weight:600}
+  .bar{display:flex;gap:9px;align-items:center;margin-top:14px;flex-wrap:wrap}
+
+  /* ── 结果 ─────────────────────────── */
+  .res{margin-top:14px;font-size:14px;display:flex;align-items:baseline;gap:8px}
+  .res b{font-size:26px;font-weight:700;color:var(--accent);letter-spacing:-.5px}
+  .ln{height:1px;background:var(--line2);margin:14px 0}
+  .ans{font-size:12.5px;line-height:2}
+  .ans span{display:inline-block;margin-right:16px}
+  .ans i{font-style:normal;color:var(--sub)}
+  @media (max-width:520px){
+    h1{font-size:19px} .prompt{font-size:15.5px} .slot .nm{font-size:12.5px}
+  }
+</style></head><body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1>赛马<em>排行</em></h1>
+    </div>
+    <span style="flex:1"></span>
+    <button class="main" id="next">下一局</button>
+  </div>
+
+  <div class="card">
+    <div class="cat">
+      <span class="prompt" id="prompt"></span>
+      <span class="sub" id="dir">从高到低</span>
+    </div>
+
+    <div class="list" id="list"></div>
+    <div class="pool" id="pool"></div>
+
+    <div class="howto">① <b>点选</b>：点某一行选中 → 点下面的名字填入（点两个已填的行＝交换；再点一次＝取回）
+      ｜ ② <b>拖动</b>：把名字拖到某行，或把已填的行拖到另一行交换</div>
+
+    <div class="bar">
+      <button class="main" id="submit">提交</button>
+      <button id="reset">清空重排</button>
+      <span class="sub" id="msg"></span>
+    </div>
+    <div class="res" id="res"></div>
+    <div class="ln"></div>
+    <div class="ans" id="ans"></div>
+  </div>
+</div>
+
+<script>
+/* 赛马排行（排序游戏）—— 口径见 tools/赛马排行/排行玩法设计.md
+   · 题目 = 概念（池化随机）：每局从概念池里**随机抽 N 个数值互不相同**的对象
+   · 题面**说「更」不说「最」**：只要求"把这 N 个排序"，不宣称史上前十
+   · 布局＝ futbol11 **Top10** 式的竖向 1–N 行（不是金字塔）
+   · 难度统一（无层级提示）・无 HELP・揭晓真实数值・**无限随机**
+   ⚠️ 2026-09-26 用户：难度统一 / 去掉帮助 / 参考 Top10 页面 / 每个游戏要有自己的风格 */
+let DATA = [], cur = null, placed = [], pool = [], sel = -1, done = false, drag = null;
+
+fetch('../assets/data/rank/play.json').then(r => r.json()).then(d => {
+  DATA = d.concepts;
+  newGame();
+});
+
+const esc = s => String(s).replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+const shuf = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--){ const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+/* 抽一局：A 型从池里随机抽 N 个不同值；B 型用该主体的 N 个分项 */
+function drawItems(c){
+  if (c.kind === 'B'){
+    const s = c.subs[0];
+    return (s ? s.items : []).map(x => ({...x}));
+  }
+  const byv = new Map();
+  c.pool.forEach(p => { if (!byv.has(p.v)) byv.set(p.v, []); byv.get(p.v).push(p); });
+  return shuf([...byv.keys()]).slice(0, c.n).sort((a, b) => b - a).map(v => ({...byv.get(v)[0]}));
+}
+
+function newGame(){
+  const c = DATA[Math.random() * DATA.length | 0];
+  const items = drawItems(c).slice(0, c.n);
+  cur = {c, items, n: c.n};
+  placed = new Array(c.n).fill(null);
+  pool = shuf(items.map((_, i) => i));
+  sel = -1; done = false; drag = null;
+  document.getElementById('res').textContent = '';
+  document.getElementById('msg').textContent = '';
+  document.getElementById('ans').innerHTML = '';
+  render();
+}
+
+function render(){
+  const {c, items, n} = cur;
+  // ✱ 2026-09-26 用户：不要整句题面与标签 ⇒ 顶部只给**简短类别**（参考 futbol11 Pyramid
+  //   的 "The category for the day is displayed at the top"），例：「鮫島克駿 · 各年勝数」
+  document.getElementById('prompt').textContent = c.label || c.title;
+  document.getElementById('dir').textContent = `${n} 个 · 从高到低`;
+
+  let html = '';
+  for (let i = 0; i < n; i++){
+    const p = placed[i], it = p != null ? items[p] : null;
+    let cls = 'slot' + (it ? '' : ' empty');
+    if (sel === i) cls += ' sel';
+    if (done && it) cls += (p === i ? ' ok' : ' bad');
+    html += `<div class="row"><span class="rk">${i + 1}</span>`
+      + `<div class="${cls}" data-s="${i}" draggable="${it ? 'true' : 'false'}">`
+      + (it ? `<span class="nm">${esc(it.n)}</span>`
+              + (done ? `<span class="vl">${it.v}${esc(c.unit)}</span>` : '')
+            : `<span class="ph">点这里选中，再点下面的名字</span>`)
+      + '</div></div>';
+  }
+  document.getElementById('list').innerHTML = html;
+
+  document.getElementById('pool').innerHTML = pool.map(i =>
+    `<span class="chip" data-p="${i}" draggable="true">${esc(items[i].n)}</span>`).join('')
+    || '<span class="sub">（都填完了）</span>';
+
+  wire();
+}
+
+function place(i, p){
+  if (placed[i] != null) pool.push(placed[i]);
+  placed[i] = p;
+  pool = pool.filter(x => x !== p);
+}
+
+function wire(){
+  document.querySelectorAll('.slot').forEach(el => {
+    const i = +el.dataset.s;
+    el.onclick = () => {
+      if (done) return;
+      if (placed[i] == null){ sel = (sel === i ? -1 : i); render(); return; }
+      if (sel === -1){ sel = i; render(); }
+      else if (sel === i){ pool.push(placed[i]); placed[i] = null; sel = -1; render(); }
+      else { const t = placed[i]; placed[i] = placed[sel]; placed[sel] = t; sel = -1; render(); }
+    };
+    el.ondragstart = e => { if (placed[i] == null) return; drag = {from: 'row', i}; el.classList.add('drag'); };
+    el.ondragend = () => el.classList.remove('drag');
+    el.ondragover = e => e.preventDefault();
+    el.ondrop = e => {
+      e.preventDefault();
+      if (done || !drag) return;
+      if (drag.from === 'row'){ const t = placed[i]; placed[i] = placed[drag.i]; placed[drag.i] = t; }
+      else place(i, drag.p);
+      drag = null; sel = -1; render();
+    };
+  });
+  document.querySelectorAll('.chip').forEach(el => {
+    const p = +el.dataset.p;
+    el.onclick = () => {
+      if (done) return;
+      let i = sel;
+      if (i < 0) i = placed.findIndex(x => x == null);
+      if (i < 0) return;
+      place(i, p); sel = -1; render();
+    };
+    el.ondragstart = e => { drag = {from: 'pool', p}; el.classList.add('drag'); };
+    el.ondragend = () => el.classList.remove('drag');
+  });
+}
+
+document.getElementById('reset').onclick = () => {
+  if (done) return;
+  pool = shuf(cur.items.map((_, i) => i));
+  placed = new Array(cur.n).fill(null); sel = -1; render();
+};
+document.getElementById('next').onclick = newGame;
+document.getElementById('submit').onclick = () => {
+  if (placed.some(p => p == null)){
+    document.getElementById('msg').textContent = '还有行没填';
+    return;
+  }
+  done = true; sel = -1;
+  const right = placed.reduce((a, p, i) => a + (p === i ? 1 : 0), 0);
+  document.getElementById('msg').textContent = '';
+  document.getElementById('res').innerHTML =
+    `<b>${right}</b><span>/ ${cur.n} 放对</span>`
+    + `<span class="sub">${right === cur.n ? '全对 🎉' :
+        (right >= cur.n - 2 ? '很接近' : '再接再厉')}</span>`;
+  document.getElementById('ans').innerHTML = '<b style="color:var(--accent)">正确顺序</b><br>'
+    + cur.items.map((x, i) => `<span>${i + 1}. ${esc(x.n)} <i>${x.v}${esc(cur.c.unit)}</i></span>`).join('');
+  render();
+};
+</script></body></html>
