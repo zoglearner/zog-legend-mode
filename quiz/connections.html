@@ -273,12 +273,55 @@
    共 **74 张在 Easy 永远不出现** —— 用户「有些风味卡出现的几率太小了」的根因就是它。
    新制 = **三档内容全开放（181 张同池）**，难度改由「**4 匹答案马的名气门槛**」表达，见 `FAME_BAR`。
    EASY_CONF ：Easy 档的混淆度上限（盘内同时满足 ≥2 个主题的马占比）
-   MAX_LIVES ：Hard 档全局容错；Easy / Normal 不限（不显示容错点） */
+   MAX_LIVES ：Hard 档全局容错；Easy / Normal 不限（不显示容错点）
+   ⏳ 2026-09-27 **难度差异再加一条「内容」层**（两步，都在 `build()` 的同一个 filter 里）——
+   用户「玩家觉得简单难度不明显，把下面这些比赛都加回到简单难度里，普通和难两个卡池不动」
+   ＋「简单的里面再把一些有难度的关系删了就好了，例如 B1、B2、C1、A2」：
+     ① **加卡**：卡上的 `d`（`d:"easy"` = 只在 Easy 出现）⇒ 30 张**名赛事**进 Easy
+        （国内 G1 20 ＋ 地方交流 Jpn1 10，见 tools/gen_g1race_cards.py 的 `PLAIN_EASY`）
+     ② **删块**：`EASY_NO_GROUPS`（B1 场地×距离・B2 巧者・C1 条件句・A2 称号·程度）整块不进 Easy
+     ③ **换口径**：F1「一级赛N胜」在 Easy 换成 **G1 N胜**（＝**中央 G1 ＋ 海外 G1**，
+        只剔除**地方交流（Jpn1）**；见 tools/gen_pool_extra.py 与 g1n_lists_g1.txt）
+        ⇒ 老 4 张 `d:["normal","hard"]`、新 5 张 `d:["easy"]`（G1 3/4/5/6/7 胜 ＝ 46/28/14/9/8）。
+        ⚠️ 为什么不"只数 JRA"：那样 ジェンティルドンナ 只剩 6 胜、イクイノックス 只剩 5 胜
+        （他们的 ドバイシーマクラシック 是海外赛），与玩家认知（**7 胜／6 胜**）不符；
+        反之保留地方交流则泥地马虚增（オメガパフューム 5→0、フリオーソ 6→0）
+   ⇒ **Easy 196 张（10 块）／ Normal・Hard 181 张（14 块）**。
+   方向＝旧制 `EASY_TYPES`「认得的主题」的延续（只是改成"加名赛事 ＋ 删细节关系块"，
+   而不是当年那种"删到只剩 9 类 ⇒ 埋掉 74 张卡"）*/
+
 /* EASY_MAX_CMP：Easy 档最多几组可以是复合条件。
    不加这条的话 Easy 和 Normal 一样难 —— 题库里复合 4678 张 vs 单条件 387 张，
    纯随机抽必然 ≈3.7/4 组都是复合，而 Easy 是给休闲玩家的档位。
    Normal 与 Hard 用**完全相同**的题池（只差容错次数），与参照站一致。 */
 const EASY_CONF = 0.05, EASY_CONF_RELAX = 0.10, EASY_MAX_CMP = 2, MAX_LIVES = { hard: 5 };
+/* ⏳ 2026-09-27（第二步）用户：「简单的里面再把一些有难度的关系删了就好了，例如 B1、B2、C1、A2」
+   ⇒ 这 **4 块（15 张）在 Easy 整块不出**，Normal / Hard 照旧 14 块全出 ⇒ Easy 池 **211 → 196 张**
+      （14 → 10 块；组数 ≥4 仍然满足 —— `build()` 里 `grps.length < 4` 的兜底不会触发）。
+   为什么是这 4 块 —— 它们都要玩家记住"**细节关系**"（不是认得马就行）：
+     B1 场地×距离（`在东京草地2400m赢过G1`）· B2 巧者（`東京巧者`）＝ 靠赛果档案的细粒度聚合
+     C1 条件句·杂项（`同场一级赛複数回制覇`・`远征能手`）· A2 称号·程度（`完美赛马`・`银牌收藏家`）
+   副作用（正面）：B1 与刚加回来的名赛事卡**成员高度重合**（`在东京草地2400m赢过G1` ⊃ 日本ダービー/オークス/
+   ジャパンカップ 的胜马）⇒ Easy 里「同一批马被两套主题解释」的歧义随之消失，混淆度下降。
+   ⚠️ 组名必须与 `tools/gen_connections.py` 的 `group_of()` 完全一致（写错＝静默不生效）；
+      自检：控制台会打印实际生效的块名，数量对不上会告警。 */
+const EASY_NO_GROUPS = new Set(['B1 场地×距离', 'B2 巧者', 'C1 条件句·杂项', 'A2 称号·程度']);
+/* ⏳ 2026-09-28 用户：「简单模式可以多一些赢过某赛，可以把这个随机权重调高一些吗，
+   顺便加上可以允许赢过某赛出多张卡的规则」—— **只作用于 Easy**（Normal / Hard 仍是
+   4 个互不相同的组、等概率，与原行为逐位一致）：
+     EASY_G_W  ：**抽组权重**（缺省 1）—— D1 调高 ⇒ 名赛事题更常占组位
+     EASY_G_CAP：**同组一盘最多抽几张**（缺省 1）—— D1 给 2 ⇒ 一盘里可以出两张赛事卡
+   为什么"能出多张"的只能是 D1：其它块出两张＝两道几乎同质的题（两张厩舎／两个世代），
+   而赛事卡彼此是**不同的比赛**，两行各是一个独立主题。
+   ⚠️ 生命线不变：每张卡仍需 ≥4 匹**独占成员**（不与同盘其它卡重叠）⇒ 重叠过大的两张赛事卡
+      自然会被拦掉（例：皐月賞 × 日本ダービー 的胜马重合很多）。
+   实测（Easy 各 4000 盘，成盘率 **全部 100%**，混淆度中位 1.5%→1.7%）：
+     W=1,CAP=1（原样）D1 0.39 张/盘（61% 的盘没有赛事卡） ｜ W=2,2 → 0.79 ｜
+     **W=3,CAP=2（现设定）→ 1.06 张/盘：25% 盘 0 张・44% 盘 1 张・31% 盘 2 张**
+     ｜ W=5,2 → 1.35（49% 盘两张，四行里两张都是赛事）—— 再往上就越过"调味"变"全是比赛"了
+   权重/上限都只在这两行常量里，改一个数即可重调。 */
+const EASY_G_W = { 'D1 赢过某赛': 3 };
+const EASY_G_CAP = { 'D1 赢过某赛': 2 };
 /* ⚠️ 2026-09-25 用户「简单难度也没有很简单」⇒ Easy 收紧两处：
      `FAME_BAR` 2→3（牌面名气<3 的占比 10%→5%）＋ `EASY_CONF` 0.10→0.05（盘内混淆度中位 3%→2%）。
    ⚠️ 混淆度用**软过滤**（见组盘循环里的 `lim`）：前 30 次尝试严格 ≤0.05，挑不到放宽到 0.10，
@@ -308,6 +351,10 @@ const FAME_BAR = { easy: 3, normal: 0, hard: 0 };
 /* typeGrp：组题分组 = 卡片自带的 `g`（生成器写进 cards.json；**判定用 conds[0].t 不动**）
    ⇒ 想改"哪些卡算同一组"只改 tools/gen_connections.py 的 GROUP_OF，前端不用动。 */
 const typeGrp = c => c.g || c.conds[0].t;
+/* 难度过滤：卡的 `d` ＝**允许出现的难度列表**（生成器写进 cards.json 的字段）；
+   无 `d` = 三档通用。⏳ 2026-09-27：`d` 由"单个难度名"升级成**数组**
+   —— 因为 F1 那组卡要「普通/难有、简单没有」（`["normal","hard"]`）＋「简单有」（`["easy"]`）。 */
+const diffOk = c => !c.d || (Array.isArray(c.d) ? c.d.includes(diff) : c.d === diff);
 /* 四组的身份色：**引用 CSS 变量**（--g1…--g4）而不是写死 hex ——
    这样深色模式下组色会自动跟着 :root 的深色值走。红色仍只留给"错了" */
 const GCOLOR = ['var(--g1)', 'var(--g2)', 'var(--g3)', 'var(--g4)'];
@@ -329,6 +376,14 @@ const enName = h => {
 };
 const ri = n => Math.random() * n | 0;
 const pick = a => a[ri(a.length)];
+/* 带权重的抽组（Easy 用）：权重取自 EASY_G_W（缺省 1）。 */
+const wPick = (a, w) => {
+  let tot = 0;
+  for (const g of a) tot += (w[g] || 1);
+  let r = Math.random() * tot;
+  for (const g of a){ r -= (w[g] || 1); if (r <= 0) return g; }
+  return a[a.length - 1];
+};
 const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--){ const j = ri(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
 /* ---------- 组题 ---------- */
@@ -342,7 +397,12 @@ function confusability(q){
 
 function build(){
   const easy = diff === 'easy';
-  const src = CARDS;              // ⚠️ 三档**同池**（181 张全开放）—— 难度不再靠"删类型"实现
+  // ⏳ 2026-09-27 用户「把名赛事加回**简单难度**，普通和难两个卡池不动」＋「再把一些有难度的关系删了」
+  //   ＋「把一级赛N胜撤下，换上 G1 N胜」（中央＋海外，不含地方交流）⇒ 难度差异从「名气门槛」扩展到**内容**：
+  //     ① `d` ＝ **允许出现的难度列表**（`["easy"]` / `["normal","hard"]`）；无 `d` = 三档通用
+  //     ② Easy 再整块剔掉 `EASY_NO_GROUPS`（B1/B2/C1/A2）
+  //     ③ （F1 的两组卡就是靠 ① 分档的：Easy＝G1 N胜（中央＋海外），Normal/Hard＝一级赛 N胜（含地方交流））
+  const src = CARDS.filter(c => diffOk(c) && !(easy && EASY_NO_GROUPS.has(typeGrp(c))));
   // 按类型分桶 ⇒ 类型之间**等概率**（旧实现 pick(CARDS) 后拒绝同类型 = 按卡数加权，厩舎 vs 毛色差 21 倍）
   const byType = new Map();
   for (const c of src){
@@ -355,8 +415,36 @@ function build(){
   }
   const grps = [...byType.keys()];
   if (grps.length < 4) return null;
+  /* 组序列（4 个组位）：
+     · Normal / Hard ＝ `shuffle(grps).slice(0,4)`（4 个互不相同的组、等概率）—— **原行为不动**
+     · Easy ＝ 带权重（EASY_G_W）＋ 每组上限（EASY_G_CAP）⇒ D1「赢过某赛」可以占 2 个组位
+     `seq == null` ＝ 可用组位凑不满 4（正常不会发生，兜底） */
+  const groupSeq = () => {
+    if (!easy) return shuffle(grps).slice(0, 4);
+    const cnt = new Map(), out = [];
+    for (let k = 0; k < 4; k++){
+      const cand = grps.filter(g => (cnt.get(g) || 0) < (EASY_G_CAP[g] || 1));
+      if (!cand.length) return null;
+      const g = wPick(cand, EASY_G_W);
+      cnt.set(g, (cnt.get(g) || 0) + 1);
+      out.push(g);
+    }
+    return out;
+  };
   for (let t = 0; t < 4000; t++){
-    const q = shuffle(grps).slice(0, 4).map(g => pick(byType.get(g)));   // 4 个不同类型 × 类内随机
+    const seq = groupSeq();
+    if (!seq) continue;
+    // 每组抽 1 张卡；**同组第二次抽必须换一张**（同一张卡出两遍＝一组答案被拆成两半，必定无解）
+    const usedByG = new Map();
+    const q = seq.map(g => {
+      const arr = byType.get(g);
+      let seen = usedByG.get(g);
+      if (!seen){ seen = new Set(); usedByG.set(g, seen); }
+      let c = pick(arr);
+      for (let k = 0; k < 30 && seen.has(c); k++) c = pick(arr);
+      seen.add(c);
+      return c;
+    });
     if (easy && q.filter(c => c.conds.length === 2).length > EASY_MAX_CMP) continue;
     // 有效成员集 = 「答案候选」：Easy 只从**够名气**的成员里挑；凑不够 4 匹 ⇒ 该卡**兜底放宽**
     // （`c.set` 挂在卡对象上 ⇒ 缓存键必须带难度，否则跨档串味）
@@ -568,6 +656,26 @@ Promise.all([
 ]).then(([d, nm]) => {
   CARDS = d.cards || []; NM = nm;
   if (!CARDS.length) throw new Error('cards.json 里没有卡片');
+  /* 自检：`EASY_NO_GROUPS` 是**按名字**排除的 —— 生成器改了组名而这里没跟着改，就会**静默失效**
+     （不是报错、只是"该删的没删"）。所以开局把实际组名打出来对一遍。 */
+  {
+    const allG = new Set(CARDS.map(typeGrp));
+    const miss = [...EASY_NO_GROUPS].filter(g => !allG.has(g));
+    const cnt = d => CARDS.filter(c => !c.d || (Array.isArray(c.d) ? c.d.includes(d) : c.d === d)).length;
+    console.log('[赛马连线] 池：总 %d 张 ｜ Easy %d ／ Normal %d ／ Hard %d（按 `d` 过滤后）｜ 组 %d 个',
+                CARDS.length, cnt('easy'), cnt('normal'), cnt('hard'), allG.size);
+    // F1（一级赛N胜）是唯一按**口径**分档的组：Easy＝G1 N胜（中央＋海外），Normal/Hard＝一级赛 N胜（含地方）
+    const f1 = dd => CARDS.filter(c => c.conds[0].t === 'g1n' && (!c.d ||
+      (Array.isArray(c.d) ? c.d.includes(dd) : c.d === dd))).map(c => c.n).join(' / ');
+    console.log('[赛马连线] F1：Easy = %s', f1('easy') || '（无）');
+    console.log('[赛马连线] F1：Normal・Hard = %s', f1('normal') || '（无）');
+    // ⏳ 2026-09-28：Easy 的抽组权重 / 每组上限（D1「赢过某赛」可以占 2 个组位）
+    console.log('[赛马连线] Easy 抽组：权重 %s ｜ 每组上限 %s',
+                JSON.stringify(EASY_G_W), JSON.stringify(EASY_G_CAP));
+    console.log('[赛马连线] Easy 排除的块：', [...EASY_NO_GROUPS]
+      .map(g => g + (allG.has(g) ? '' : ' ← ⚠ 池里没有这个组名')).join(' ／ '));
+    if (miss.length) console.warn('[赛马连线] ⚠ EASY_NO_GROUPS 组名对不上，这些块**没有**被排除：', miss);
+  }
   // **不自动开局**：进场停在「选难度」状态，由玩家点某一档才开始
   el('load').hidden = true;
   document.body.classList.add('picking');
