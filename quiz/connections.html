@@ -114,6 +114,15 @@
   .msg.near b{background:var(--near-bg);color:var(--near-ink);box-shadow:inset 0 0 0 1px var(--near-bg)}
   .msg.no b{background:var(--no-bg);color:var(--no-ink);box-shadow:inset 0 0 0 1px var(--no-bg)}
   .msg.no{color:var(--no-ink)}
+  /* ⏳ 2026-09-29 用户：「移动端『差一匹』『错误』的提示往往在屏幕上方，点提交时看不到，得刷上去才知道」
+     ⇒ 两处改：① 反馈条从**棋盘上方**移到**棋盘与按钮之间**（DOM 见 body，桌面端也顺手变好）
+                ② 窄屏（≤620px）再让它 `position:sticky` 贴视口底部 ⇒ 滚在哪都看得见；
+                   贴住时它压在按钮**上方**（按钮若已滚出视口才发生，不影响点击），且
+                   `z-index:5` ＋ 不遮 modal（modal 是 z-index:20） */
+  @media (max-width:620px){
+    .msg{position:sticky;bottom:6px;z-index:5;margin:8px 0 0}
+    .msg b{padding:9px 15px;box-shadow:0 8px 22px -10px rgba(30,42,51,.45)}
+  }
 
   /* ── 面板：一张浮起的白卡 ───────────────────────────────────── */
   .panel{margin-top:12px;padding:16px;background:var(--surface);border:1px solid var(--line);
@@ -236,7 +245,6 @@
       <button class="diff" data-d="hard">难<span class="dnote">难度同普通・5 次机会</span></button>
     </div>
   </div>
-  <div class="msg" id="msg"></div>
 
   <div id="board" hidden>
     <div class="panel">
@@ -245,6 +253,9 @@
       <div id="solved"></div>
       <div class="lives" id="lives" hidden></div>
       <div class="grid" id="grid"></div>
+      <!-- ⏳ 2026-09-29 反馈条从「棋盘上方」移到「棋盘与按钮之间」：
+           移动端点提交时它就在手边（原来在屏幕外，得往上刷才看得到） -->
+      <div class="msg" id="msg"></div>
       <div class="actions">
         <button class="b" id="bClear">清除选择</button>
         <button class="b pri" id="bGo" disabled>提交</button>
@@ -286,7 +297,9 @@
         ⚠️ 为什么不"只数 JRA"：那样 ジェンティルドンナ 只剩 6 胜、イクイノックス 只剩 5 胜
         （他们的 ドバイシーマクラシック 是海外赛），与玩家认知（**7 胜／6 胜**）不符；
         反之保留地方交流则泥地马虚增（オメガパフューム 5→0、フリオーソ 6→0）
-   ⇒ **Easy 196 张（10 块）／ Normal・Hard 181 张（14 块）**。
+   ⇒ **Easy 198 张（17 块）／ Normal・Hard 182 张（15 块）**
+      （⏳ 2026-09-28 切块后的数字；切块前是 Easy 196／Normal 181，块名也换了——
+        逐档的块规模与构成见 tools/赛马连线/preview_partition.py 的打印）。
    方向＝旧制 `EASY_TYPES`「认得的主题」的延续（只是改成"加名赛事 ＋ 删细节关系块"，
    而不是当年那种"删到只剩 9 类 ⇒ 埋掉 74 张卡"）*/
 
@@ -303,25 +316,32 @@ const EASY_CONF = 0.05, EASY_CONF_RELAX = 0.10, EASY_MAX_CMP = 2, MAX_LIVES = { 
      C1 条件句·杂项（`同场一级赛複数回制覇`・`远征能手`）· A2 称号·程度（`完美赛马`・`银牌收藏家`）
    副作用（正面）：B1 与刚加回来的名赛事卡**成员高度重合**（`在东京草地2400m赢过G1` ⊃ 日本ダービー/オークス/
    ジャパンカップ 的胜马）⇒ Easy 里「同一批马被两套主题解释」的歧义随之消失，混淆度下降。
-   ⚠️ 组名必须与 `tools/gen_connections.py` 的 `group_of()` 完全一致（写错＝静默不生效）；
-      自检：控制台会打印实际生效的块名，数量对不上会告警。 */
-const EASY_NO_GROUPS = new Set(['B1 场地×距离', 'B2 巧者', 'C1 条件句·杂项', 'A2 称号·程度']);
+   ⚠️ 块名必须与 `tools/gen_connections.py` 的 `init_split()` 完全一致（写错＝静默不生效）；
+      自检：控制台会打印实际生效的块名，数量对不上会告警。
+   ⏳ 2026-09-28：**块内卡数被抹平**（18 块／9–16 张；旧制 14 族 2–70 张 ⇒ 差 35 倍）⇒
+     `EASY_NO_GROUPS` 跟着改：B1+B2+C1 合成「场地·条件」（Easy 仍整块不出）；
+     A2 称号·程度 的 3 张不再靠块名排除，改成**按卡** `d:["normal","hard"]`（生成器设）。 */
+const EASY_NO_GROUPS = new Set(['场地·条件']);
 /* ⏳ 2026-09-28 用户：「简单模式可以多一些赢过某赛，可以把这个随机权重调高一些吗，
    顺便加上可以允许赢过某赛出多张卡的规则」—— **只作用于 Easy**（Normal / Hard 仍是
-   4 个互不相同的组、等概率，与原行为逐位一致）：
-     EASY_G_W  ：**抽组权重**（缺省 1）—— D1 调高 ⇒ 名赛事题更常占组位
-     EASY_G_CAP：**同组一盘最多抽几张**（缺省 1）—— D1 给 2 ⇒ 一盘里可以出两张赛事卡
-   为什么"能出多张"的只能是 D1：其它块出两张＝两道几乎同质的题（两张厩舎／两个世代），
-   而赛事卡彼此是**不同的比赛**，两行各是一个独立主题。
+   4 个互不相同的块、等概率，与原行为逐位一致）：
+     EASY_G_W  ：**抽块权重**（缺省 1）—— 赛事块调高 ⇒ 名赛事题更常占组位
+     EASY_G_CAP：**同块一盘最多抽几张**（缺省 1）—— 赛事块给 2 ⇒ 一盘可以出两张赛事卡
+   ⚠️ 权重必须跟着切块一起改：旧值 `{'D1 赢过某赛': 3}` 是给"43 张一个大块"设的；
+      切均后仍给 3 ⇒ 4 个赛事块会吃掉 1.7 个组位、20 张赛事卡涨到 5.3%/盘（把"香港马王问题"
+      搬到赛事卡上）。**1.2** 正好维持"每盘 ≈1 张赛事"（实测 **0.99 张/盘**）。
    ⚠️ 生命线不变：每张卡仍需 ≥4 匹**独占成员**（不与同盘其它卡重叠）⇒ 重叠过大的两张赛事卡
       自然会被拦掉（例：皐月賞 × 日本ダービー 的胜马重合很多）。
-   实测（Easy 各 4000 盘，成盘率 **全部 100%**，混淆度中位 1.5%→1.7%）：
-     W=1,CAP=1（原样）D1 0.39 张/盘（61% 的盘没有赛事卡） ｜ W=2,2 → 0.79 ｜
-     **W=3,CAP=2（现设定）→ 1.06 张/盘：25% 盘 0 张・44% 盘 1 张・31% 盘 2 张**
-     ｜ W=5,2 → 1.35（49% 盘两张，四行里两张都是赛事）—— 再往上就越过"调味"变"全是比赛"了
-   权重/上限都只在这两行常量里，改一个数即可重调。 */
-const EASY_G_W = { 'D1 赢过某赛': 3 };
-const EASY_G_CAP = { 'D1 赢过某赛': 2 };
+   实测（Easy 6 万盘，成盘率 **100%**）：单卡出现率极差 50 → **3.9 倍**；香港马王 13.3% → **1.7%** */
+const EASY_G_W = { '赛事·3歳(easy)': 1.2, '赛事·古馬(easy)': 1.2,
+                   '赛事·地方交流(easy)': 1.2, '赛事·通用': 1.2 };
+const EASY_G_CAP = { '赛事·3歳(easy)': 2, '赛事·古馬(easy)': 2,
+                     '赛事·地方交流(easy)': 2, '赛事·通用': 2 };
+/* ⏳ 2026-09-28 **同族上限**：块名格式是 `族·子块`，**族＝`·` 之前的部分**；同一个族一盘最多几张。
+   切块让同族的小块可以同盘出现（这是"抹平"的代价），上限 2 ⇒ 不会出现"4 张全是档案题"。
+   实测：与不设上限相比单卡极差几乎不变（3.9 vs 4.2 倍），但保证了盘内题型多样性。 */
+const FAM_CAP = 2;
+const famOf = g => String(g).split('·')[0];
 /* ⚠️ 2026-09-25 用户「简单难度也没有很简单」⇒ Easy 收紧两处：
      `FAME_BAR` 2→3（牌面名气<3 的占比 10%→5%）＋ `EASY_CONF` 0.10→0.05（盘内混淆度中位 3%→2%）。
    ⚠️ 混淆度用**软过滤**（见组盘循环里的 `lim`）：前 30 次尝试严格 ≤0.05，挑不到放宽到 0.10，
@@ -420,13 +440,29 @@ function build(){
      · Easy ＝ 带权重（EASY_G_W）＋ 每组上限（EASY_G_CAP）⇒ D1「赢过某赛」可以占 2 个组位
      `seq == null` ＝ 可用组位凑不满 4（正常不会发生，兜底） */
   const groupSeq = () => {
-    if (!easy) return shuffle(grps).slice(0, 4);
-    const cnt = new Map(), out = [];
+    /* 非 Easy：4 个互不相同的块、**等概率**（原行为）——只是加一层「同族 ≤FAM_CAP」，
+       同族可选块不足时**自动放宽**（否则会凑不满 4 个块 ⇒ 白转一圈重抽） */
+    if (!easy){
+      const out = [], fcnt = new Map();
+      while (out.length < 4){
+        const free = grps.filter(g => !out.includes(g));
+        const cap = free.filter(g => (fcnt.get(famOf(g)) || 0) < FAM_CAP);
+        const pool = cap.length ? cap : free;
+        if (!pool.length) return null;
+        const g = pick(pool);
+        out.push(g); fcnt.set(famOf(g), (fcnt.get(famOf(g)) || 0) + 1);
+      }
+      return out;
+    }
+    const cnt = new Map(), fcnt = new Map(), out = [];
     for (let k = 0; k < 4; k++){
-      const cand = grps.filter(g => (cnt.get(g) || 0) < (EASY_G_CAP[g] || 1));
+      let cand = grps.filter(g => (cnt.get(g) || 0) < (EASY_G_CAP[g] || 1));
+      const cap = cand.filter(g => (fcnt.get(famOf(g)) || 0) < FAM_CAP);   // ⏳ 同族上限
+      if (cap.length) cand = cap;
       if (!cand.length) return null;
       const g = wPick(cand, EASY_G_W);
       cnt.set(g, (cnt.get(g) || 0) + 1);
+      fcnt.set(famOf(g), (fcnt.get(famOf(g)) || 0) + 1);
       out.push(g);
     }
     return out;
@@ -656,25 +692,34 @@ Promise.all([
 ]).then(([d, nm]) => {
   CARDS = d.cards || []; NM = nm;
   if (!CARDS.length) throw new Error('cards.json 里没有卡片');
-  /* 自检：`EASY_NO_GROUPS` 是**按名字**排除的 —— 生成器改了组名而这里没跟着改，就会**静默失效**
-     （不是报错、只是"该删的没删"）。所以开局把实际组名打出来对一遍。 */
+  /* 自检：块名是**按名字**使用的（EASY_NO_GROUPS／EASY_G_W／EASY_G_CAP）——生成器改了块名
+     而这里没跟着改，就会**静默失效**（不是报错、只是"该删的没删／权重没生效"）⇒ 开局对一遍。 */
   {
-    const allG = new Set(CARDS.map(typeGrp));
-    const miss = [...EASY_NO_GROUPS].filter(g => !allG.has(g));
+    const allG = [...new Set(CARDS.map(typeGrp))];
+    const byG = new Map();
+    CARDS.forEach(c => { const g = typeGrp(c); byG.set(g, (byG.get(g) || 0) + 1); });
+    const miss = [...EASY_NO_GROUPS].filter(g => !allG.includes(g));
     const cnt = d => CARDS.filter(c => !c.d || (Array.isArray(c.d) ? c.d.includes(d) : c.d === d)).length;
-    console.log('[赛马连线] 池：总 %d 张 ｜ Easy %d ／ Normal %d ／ Hard %d（按 `d` 过滤后）｜ 组 %d 个',
-                CARDS.length, cnt('easy'), cnt('normal'), cnt('hard'), allG.size);
+    console.log('[赛马连线] 池：总 %d 张 ｜ Easy %d ／ Normal %d ／ Hard %d（按 `d` 过滤后）｜ 块 %d 个（族 %d）',
+                CARDS.length, cnt('easy'), cnt('normal'), cnt('hard'), allG.length,
+                new Set(allG.map(famOf)).size);
+    // ⏳ 2026-09-28「块内卡数抹平」自检：块规模应落在 9–16（旧制 2–70 ⇒ 极差 35 倍是"老同一道题"的根因）
+    const sz = allG.map(g => byG.get(g)).sort((a, b) => a - b);
+    console.log('[赛马连线] 块规模：%d–%d（中位 %d）｜ %s', sz[0], sz[sz.length - 1], sz[sz.length >> 1],
+                allG.map(g => g + ':' + byG.get(g)).join(' '));
+    if (sz[0] < 8 || sz[sz.length - 1] > 16)
+      console.warn('[赛马连线] ⚠ 块规模超出 9–16 ⇒ "块内卡数抹平"跑偏了（检查 init_split）:', sz);
     // F1（一级赛N胜）是唯一按**口径**分档的组：Easy＝G1 N胜（中央＋海外），Normal/Hard＝一级赛 N胜（含地方）
     const f1 = dd => CARDS.filter(c => c.conds[0].t === 'g1n' && (!c.d ||
       (Array.isArray(c.d) ? c.d.includes(dd) : c.d === dd))).map(c => c.n).join(' / ');
     console.log('[赛马连线] F1：Easy = %s', f1('easy') || '（无）');
     console.log('[赛马连线] F1：Normal・Hard = %s', f1('normal') || '（无）');
-    // ⏳ 2026-09-28：Easy 的抽组权重 / 每组上限（D1「赢过某赛」可以占 2 个组位）
-    console.log('[赛马连线] Easy 抽组：权重 %s ｜ 每组上限 %s',
-                JSON.stringify(EASY_G_W), JSON.stringify(EASY_G_CAP));
+    // ⏳ 2026-09-28：Easy 的抽块权重 / 每块上限（赛事块可以占 2 个组位）＋ 同族上限
+    console.log('[赛马连线] Easy 抽块：权重 %s ｜ 每块上限 %s ｜ 同族上限 %d',
+                JSON.stringify(EASY_G_W), JSON.stringify(EASY_G_CAP), FAM_CAP);
     console.log('[赛马连线] Easy 排除的块：', [...EASY_NO_GROUPS]
-      .map(g => g + (allG.has(g) ? '' : ' ← ⚠ 池里没有这个组名')).join(' ／ '));
-    if (miss.length) console.warn('[赛马连线] ⚠ EASY_NO_GROUPS 组名对不上，这些块**没有**被排除：', miss);
+      .map(g => g + ':' + (byG.get(g) || 0) + (allG.includes(g) ? '' : ' ← ⚠ 池里没有这个块名')).join(' ／ '));
+    if (miss.length) console.warn('[赛马连线] ⚠ EASY_NO_GROUPS 块名对不上，这些块**没有**被排除：', miss);
   }
   // **不自动开局**：进场停在「选难度」状态，由玩家点某一档才开始
   el('load').hidden = true;
