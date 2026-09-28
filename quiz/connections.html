@@ -97,6 +97,23 @@
   body.picking .seg{background:transparent;gap:8px;padding:0}
   body.picking .diff{padding:15px 30px;border:1px solid var(--line);background:var(--surface);box-shadow:var(--sh1)}
   body.picking .diff.on{border-color:var(--g1);box-shadow:0 0 0 3px rgba(79,70,229,.16),var(--sh1)}
+  /* ⏳ 2026-09-29 用户：「选难度页面的移动端换行适配问题」
+     症状：`.diff` 是 `inline-flex + align-items:baseline`，而「难」里挂着 `<span class="dnote">
+     难度同普通・5 次机会</span>` ⇒ 那个按钮宽成别人的 2.4 倍（390px：66 / 66 / 160），
+     且在 320–360px 上注释**折行**把三颗按钮一起撑高（游戏中 39 → 60px、选难度页 74 → 83px），
+     标签基线还跟着错位。
+     修法（≤620px）：三键**等宽**（`flex:1 1 0`）＋ 按钮内改**纵向**布局（注释折到第二行、居中），
+     给统一 `min-height` ⇒ 无论注释折几行，三颗永远一样高、一样宽，也不再横向溢出。 */
+  @media (max-width:620px){
+    .bar{padding:0 2px}
+    .seg{display:flex;gap:6px;width:100%}
+    .diff{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;
+          justify-content:center;gap:2px;padding:10px 6px;line-height:1.25}
+    .diff .dnote{font-size:9.5px;line-height:1.3;text-align:center;opacity:.7;letter-spacing:0}
+    body.picking .seg{gap:6px}
+    body.picking .diff{padding:13px 6px;min-height:78px}
+    body:not(.picking) .diff{min-height:56px}
+  }
 
   /* ── 容错点（Hard）──────────────────────────────────────────── */
   .lives{display:flex;gap:6px;justify-content:center;margin:0 0 12px}
